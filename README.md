@@ -1,1 +1,185 @@
-# tcgplayer-price-bot
+# TCGPlayer Price Monitoring Discord Bot
+
+## Project Description
+
+A Discord bot designed to monitor prices of specific TCGPlayer items and send alerts when their prices drop below a user-defined threshold. It also maintains a historical record of price changes for each monitored URL.
+
+## Features
+
+- Add, list, update, and delete monitored items via Discord slash commands.
+- Set a price threshold for each item to receive alerts.
+- Tracks price history for each unique TCGPlayer URL.
+- Ownership checks for managing items (server owner or item owner).
+- Utilizes Puppeteer for web scraping TCGPlayer prices.
+- Uses Prisma as an ORM with a PostgreSQL database backend.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- Node.js (v18 or higher recommended)
+- npm (Node Package Manager)
+- Docker and Docker Compose (for the Supabase backend)
+- Git
+
+## Setup and Running the Project
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/americoperez49/tcgplayer-price-bot.git
+cd tcgplayer-price-bot
+```
+
+### 2. Environment Variables
+
+Create a `.env` file in the root directory of the project with the following variables:
+
+```
+DISCORD_TOKEN=YOUR_DISCORD_BOT_TOKEN
+CHANNEL_ID=YOUR_DISCORD_CHANNEL_ID
+SERVER_ID=YOUR_DISCORD_SERVER_ID
+POLLING_INTERVAL_MS=300000
+CLIENT_ID=YOUR_DISCORD_CLIENT_ID
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres?schema=public"
+```
+
+- `DISCORD_TOKEN`: Your Discord bot's unique token.
+
+  1.  Go to the [Discord Developer Portal](https://discord.com/developers/applications).
+  2.  Select your application or create a new one.
+  3.  Navigate to "Bot" under "Settings".
+  4.  Click "Reset Token" (if needed) and copy the token. **Keep this token private!**
+  5.  Ensure you enable the necessary [Privileged Gateway Intents](https://discord.com/developers/docs/topics/gateway#privileged-intents) (e.g., `PRESENCE_INTENT`, `SERVER_MEMBERS_INTENT`, `MESSAGE_CONTENT_INTENT`) as required by your bot's functionality.
+
+- `CHANNEL_ID`: The ID of the Discord channel where the bot will send price alerts.
+
+  1.  In Discord, go to "User Settings" > "App Settings" > "Advanced" and enable "Developer Mode".
+  2.  Right-click on the desired channel in your Discord server.
+  3.  Click "Copy ID".
+
+- `SERVER_ID`: The ID of your Discord server (guild). This is used for deploying slash commands globally or to a specific guild.
+
+  1.  Ensure "Developer Mode" is enabled (see `CHANNEL_ID` instructions).
+  2.  Right-click on your server icon in Discord.
+  3.  Click "Copy ID".
+
+- `POLLING_INTERVAL_MS`: The interval (in milliseconds) at which the bot will check for price changes.
+
+  - Default: `300000` (5 minutes). Adjust as needed.
+
+- `CLIENT_ID`: Your Discord application's Client ID. This is needed for deploying global slash commands.
+
+  1.  Go to the [Discord Developer Portal](https://discord.com/developers/applications).
+  2.  Select your application.
+  3.  Under "General Information" > "General Information", copy the "Application ID".
+
+- `DATABASE_URL`: The connection string for your PostgreSQL database.
+  - For local development with Supabase, use the default value provided which you can get from [Accessing Postgres](https://supabase.com/docs/guides/self-hosting/docker#accessing-postgres). Make sure to use the session based connection.
+  - Refer to the "Supabase Backend (Local with Docker)" section below for instructions on setting up your local database.
+
+### 3. Supabase Backend (Local with Docker)
+
+This project uses Supabase for its PostgreSQL database. You can run a local instance using Docker:
+
+1.  **Start Supabase services:**
+
+    ```bash
+    docker compose -f supabase/docker/docker-compose.yml up -d
+    ```
+
+    This will start PostgreSQL, PostgREST, and other Supabase services. The database will be accessible at `localhost:5432`.
+
+2.  **Verify Supabase status:**
+
+    ```bash
+    docker compose -f supabase/docker/docker-compose.yml ps
+    ```
+
+    Ensure all services are running.
+
+3.  **Run Prisma Migrations:**
+    Once the Supabase database is running, apply the Prisma migrations to set up your database schema:
+    ```bash
+    npx prisma migrate dev
+    ```
+    You might be prompted to name the migration if there are new schema changes.
+
+### 4. Install Dependencies
+
+```bash
+npm install
+```
+
+### 5. Build the Project
+
+Compile the TypeScript code:
+
+```bash
+npm run build
+```
+
+### 6. Deploy Discord Commands
+
+Register the slash commands with Discord. **You only need to run this command once, or whenever you add/modify slash commands.**
+
+```bash
+npm run deploy-commands
+```
+
+### 7. Run the Bot
+
+Start the Discord bot:
+
+```bash
+npm start
+```
+
+The bot should now be online in your Discord server and start monitoring prices according to your configured items.
+
+## Database Schema
+
+The project uses Prisma with the following models:
+
+```mermaid
+erDiagram
+    Url {
+        String id PK
+        String url UK "Unique URL"
+        MonitoredItem[] monitoredItems
+        PriceHistory[] priceHistory
+    }
+
+    MonitoredItem {
+        String id PK
+        String name
+        Float threshold
+        String discordUserId
+        String urlId FK
+        Url url
+    }
+
+    PriceHistory {
+        String id PK
+        String urlId FK
+        Url url
+        Float price
+        DateTime timestamp
+    }
+
+    MonitoredItem ||--o{ Url : "references"
+    Url ||--o{ PriceHistory : "has_history"
+```
+
+## Commands
+
+- `/add-item <name> <url> <threshold>`: Adds a new item to monitor.
+- `/list-items`: Lists all monitored items (or yours if not server owner).
+- `/update-item`: Select an item to update its name, URL, or threshold.
+- `/delete-item`: Select an item to delete.
+
+## Troubleshooting
+
+- If the bot doesn't come online, check your `DISCORD_TOKEN` and `CHANNEL_ID` in the `.env` file.
+- Ensure your local Supabase services are running and Prisma migrations have been applied.
+- For Puppeteer issues, ensure you have the necessary browser dependencies installed on your system if running without Docker, or that the Docker environment supports headless Chrome.
