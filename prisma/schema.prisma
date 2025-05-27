@@ -20,12 +20,13 @@ model Url {
 }
 
 model MonitoredItem {
-  id            String   @id @default(uuid()) // Changed to GUID (UUID)
+  id            String    @id @default(uuid()) // Changed to GUID (UUID)
   name          String
+  condition     Condition @default(NearMint) // New field
   threshold     Float
-  discordUserId String   // Made required
+  discordUserId String    // Made required
   urlId         String
-  url           Url      @relation(fields: [urlId], references: [id])
+  url           Url       @relation(fields: [urlId], references: [id])
 
   @@map("monitored_items") // Map to a snake_case table name
 }
@@ -38,4 +39,14 @@ model PriceHistory {
   timestamp DateTime @default(now())
 
   @@map("price_history")
+}
+
+enum Condition {
+  Unopened
+  NearMint
+  LightlyPlayed    // New value
+  ModeratelyPlayed // New value
+  HeavilyPlayed    // New value
+
+  @@map("conditions")
 }

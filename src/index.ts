@@ -12,6 +12,8 @@ import {
   TextInputBuilder, // Import TextInputBuilder
   TextInputStyle, // Import TextInputStyle
   ActionRowBuilder, // Import ActionRowBuilder for modal components
+  StringSelectMenuBuilder, // Import StringSelectMenuBuilder
+  StringSelectMenuOptionBuilder, // Import StringSelectMenuOptionBuilder
 } from "discord.js"
 import { CustomClient } from "./CustomClient" // Import CustomClient
 import puppeteer from "puppeteer" // Import puppeteer
@@ -57,37 +59,67 @@ function setupCommands() {
   }
 }
 
-async function fetchPrice(url: string): Promise<number | null> {
+async function fetchItemDetails(
+  url: string
+): Promise<{ price: number | null; condition: string | null }> {
   let browser
   try {
     browser = await puppeteer.launch({ headless: false }) // Use true for headless mode
     const page = await browser.newPage()
     await page.goto(url) // Use the passed URL
-    await new Promise((resolve) => setTimeout(resolve, 6000)) // Wait for 6 seconds as requested by the user
+    await new Promise((resolve) => setTimeout(resolve, 10000)) // Wait for 6 seconds as requested by the user
 
-    // Wait for the price element to be available (still good to have this as a fallback/confirmation)
-    await page.waitForSelector("span.spotlight__price", { timeout: 5000 }) // Reduced timeout as we already waited
-
-    const priceText = await page.evaluate(() => {
-      const element = document.querySelector(".spotlight__price")
-      return element ? element.textContent : null
+    // Wait for the price and condition elements to be available
+    await page.waitForSelector("span.spotlight__price", { timeout: 5000 })
+    await page.waitForSelector("section.spotlight__condition", {
+      timeout: 5000,
     })
 
-    console.log(`Raw price text found: ${priceText}`)
+    const details = await page.evaluate(() => {
+      const priceElement = document.querySelector(".spotlight__price")
+      const conditionElement = document.querySelector(".spotlight__condition")
 
-    if (priceText) {
-      const match = priceText.match(/\$([0-9]+\.?[0-9]*)/)
-      if (match && match[1]) {
-        const price = parseFloat(match[1])
-        return price
+      const priceText = priceElement ? priceElement.textContent : null
+      const conditionText = conditionElement
+        ? conditionElement.textContent
+        : null
+
+      let price: number | null = null
+      if (priceText) {
+        const match = priceText.match(/\$([0-9]+\.?[0-9]*)/)
+        if (match && match[1]) {
+          price = parseFloat(match[1])
+        }
       }
+
+      // Normalize condition text to match enum values (e.g., "Near Mint" -> "NearMint")
+      let condition: string | null = null
+      if (conditionText) {
+        condition = conditionText.replace(/\s/g, "") // Remove spaces
+      }
+
+      return { price, condition }
+    })
+
+    console.log(`Raw price found: ${details.price}`)
+    console.log(`Raw condition found: ${details.condition}`)
+
+    if (details.price === null) {
+      console.warn(`Could not find price on TCGPlayer page for URL: ${url}.`)
+    }
+    if (details.condition === null) {
+      console.warn(
+        `Could not find condition on TCGPlayer page for URL: ${url}.`
+      )
     }
 
-    console.warn(`Could not find price on TCGPlayer page for URL: ${url}.`)
-    return null
+    return details
   } catch (error) {
-    console.error(`Error fetching price from TCGPlayer for URL: ${url}:`, error)
-    return null
+    console.error(
+      `Error fetching item details from TCGPlayer for URL: ${url}:`,
+      error
+    )
+    return { price: null, condition: null }
   } finally {
     if (browser) {
       await browser.close()
@@ -111,9 +143,12 @@ async function checkPriceAndNotify() {
   for (const item of itemsToMonitor) {
     const timestamp = new Date().toLocaleString()
     console.log(
-      `[${timestamp}] Checking price for: ${item.name} (${item.url.url})`
+      `[${timestamp}] Checking price for: ${item.name} (${item.url.url}) with condition: ${item.condition}`
     ) // Access url from the relation
-    const currentPrice = await fetchPrice(item.url.url) // Pass the actual URL
+    const itemDetails = await fetchItemDetails(item.url.url) // Call the new function
+
+    const currentPrice = itemDetails.price
+    const scrapedCondition = itemDetails.condition
 
     if (currentPrice === null) {
       console.log(
@@ -151,19 +186,29 @@ async function checkPriceAndNotify() {
       )
     }
 
-    // Only alert if currentPrice is below the item's threshold
-    if (currentPrice < item.threshold) {
-      // threshold is now required, so no need for null check
+    // Only alert if currentPrice is below the item's threshold AND condition matches
+    if (currentPrice < item.threshold && scrapedCondition === item.condition) {
       console.log(
-        `[${timestamp}] Price $${currentPrice} for ${item.name} is below threshold $${item.threshold}. Sending alert.`
+        `[${timestamp}] Price $${currentPrice} for ${item.name} (Condition: ${scrapedCondition}) is below threshold $${item.threshold} and condition matches. Sending alert.`
       )
       const channel = (await client.channels.fetch(
         config.CHANNEL_ID
       )) as TextChannel
       if (channel) {
+        // Find all users monitoring this specific URL
+        const usersToNotify = await prisma.monitoredItem.findMany({
+          where: { urlId: item.urlId },
+          select: { discordUserId: true },
+        })
+
+        const uniqueUserIds = [
+          ...new Set(usersToNotify.map((u) => u.discordUserId)),
+        ]
+        const mentions = uniqueUserIds.map((id) => `<@${id}>`).join(" ")
+
         await channel.send(
-          `🚨 PRICE ALERT! 🚨\n` +
-            `Item: ${item.name}\n` +
+          `${mentions} 🚨 PRICE ALERT! 🚨\n` + // Add mentions here
+            `Item: ${item.name} (Condition: ${scrapedCondition})\n` + // Include scraped condition
             `The price has dropped to $${currentPrice}!\n` +
             `Threshold: $${item.threshold}\n` +
             `Link: ${item.url.url}`
@@ -173,7 +218,7 @@ async function checkPriceAndNotify() {
       }
     } else {
       console.log(
-        `[${timestamp}] Price $${currentPrice} for ${item.name} is above or equal to threshold $${item.threshold}. No alert needed.`
+        `[${timestamp}] Price $${currentPrice} for ${item.name} (Condition: ${scrapedCondition}) is above or equal to threshold $${item.threshold} or condition does not match. No alert needed.`
       )
     }
     await new Promise((resolve) => setTimeout(resolve, 5000)) // Wait for 5 seconds between items
@@ -297,14 +342,28 @@ async function handleUpdateItemSelect(interaction: any) {
       .setRequired(false)
       .setValue(existingItem.threshold.toString()) // Convert number to string for TextInput
 
+    const conditionInput = new TextInputBuilder()
+      .setCustomId("conditionInput")
+      .setLabel("Item Condition (Unopened, Near Mint, etc.)") // Shortened label
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setValue(existingItem.condition) // Set the current condition
+
     const firstActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput)
     const secondActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(urlInput)
     const thirdActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(thresholdInput)
+    const fourthActionRow =
+      new ActionRowBuilder<TextInputBuilder>().addComponents(conditionInput) // New row for condition
 
-    modal.addComponents(firstActionRow, secondActionRow, thirdActionRow)
+    modal.addComponents(
+      firstActionRow,
+      secondActionRow,
+      thirdActionRow,
+      fourthActionRow
+    ) // Add the new row
 
     await interaction.showModal(modal)
   } catch (error) {
@@ -327,6 +386,7 @@ async function handleUpdateItemModalSubmit(interaction: any) {
   const newThresholdString =
     interaction.fields.getTextInputValue("thresholdInput")
   const newThreshold = parseFloat(newThresholdString)
+  const newCondition = interaction.fields.getTextInputValue("conditionInput") // Get the new condition
 
   const discordUserId = interaction.user.id
   const isServerOwner = interaction.guild.ownerId === discordUserId
@@ -356,11 +416,43 @@ async function handleUpdateItemModalSubmit(interaction: any) {
       name?: string
       urlId?: string // Change from url to urlId
       threshold?: number
+      condition?:
+        | "Unopened"
+        | "NearMint"
+        | "LightlyPlayed"
+        | "ModeratelyPlayed"
+        | "HeavilyPlayed" // Update condition to updateData type
     } = {}
 
     // Only update if value has changed or is provided
     if (newName !== existingItem.name && newName !== "") {
       updateData.name = newName
+    }
+
+    // Validate and update condition
+    const validConditions = [
+      "Unopened",
+      "NearMint",
+      "LightlyPlayed", // New value
+      "ModeratelyPlayed",
+      "HeavilyPlayed",
+    ] // Updated valid conditions
+    if (
+      newCondition !== "" &&
+      newCondition !== existingItem.condition &&
+      validConditions.includes(newCondition)
+    ) {
+      updateData.condition = newCondition as
+        | "Unopened"
+        | "NearMint"
+        | "LightlyPlayed" // Update type
+        | "ModeratelyPlayed"
+        | "HeavilyPlayed"
+    } else if (newCondition !== "" && !validConditions.includes(newCondition)) {
+      await interaction.editReply(
+        "Failed to update item: Invalid condition provided. Must be 'Unopened', 'Near Mint', 'Lightly Played', 'Moderately Played', or 'Heavily Played'."
+      )
+      return
     }
 
     if (newUrl !== existingItem.url.url && newUrl !== "") {

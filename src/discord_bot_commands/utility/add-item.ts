@@ -26,12 +26,26 @@ export default {
         .setName("threshold")
         .setDescription("The price threshold below which to send an alert")
         .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("condition")
+        .setDescription('The condition of the item ("Unopened" or "Near Mint")')
+        .setRequired(true)
+        .addChoices(
+          { name: "Unopened", value: "Unopened" },
+          { name: "Near Mint", value: "NearMint" },
+          { name: "Lightly Played", value: "LightlyPlayed" }, // New choice
+          { name: "Moderately Played", value: "ModeratelyPlayed" },
+          { name: "Heavily Played", value: "HeavilyPlayed" }
+        )
     ),
   async execute(interaction: any) {
     // Use 'any' for interaction for simplicity
     const itemName = interaction.options.getString("name")
     const itemUrl = interaction.options.getString("url")
     const itemThreshold = interaction.options.getNumber("threshold")
+    const itemCondition = interaction.options.getString("condition") // Get the condition
     const discordUserId = interaction.user.id // Get the Discord user ID
 
     if (itemName.length > 45) {
@@ -60,6 +74,7 @@ export default {
           name: itemName,
           urlId: urlRecord.id, // Use the ID from the Url record
           threshold: itemThreshold,
+          condition: itemCondition, // Include the condition
           discordUserId: discordUserId, // Include the Discord user ID
         },
       })
