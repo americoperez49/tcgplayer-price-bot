@@ -10,12 +10,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model ItemPrice {
+model MonitoredItem {
   id        Int      @id @default(autoincrement())
   name      String
-  url       String
-  price     Float
-  timestamp DateTime @default(now())
+  url       String   @unique // URL should be unique for monitored items
+  threshold Float
 
-  @@unique([url, timestamp]) // Ensures unique entries for a given item at a specific time
+  prices    PriceHistory[] // Relation to PriceHistory
+
+  @@map("monitored_items") // Map to a snake_case table name
+}
+
+model PriceHistory {
+  id              Int      @id @default(autoincrement())
+  monitoredItemId Int
+  price           Float
+  timestamp       DateTime @default(now())
+
+  monitoredItem   MonitoredItem @relation(fields: [monitoredItemId], references: [id])
+
+  @@map("price_history") // Map to a snake_case table name
 }

@@ -1,7 +1,7 @@
 import dotenv from "dotenv"
 dotenv.config() // Load environment variables first
 
-import { config, MonitoredItem } from "./config" // Import MonitoredItem interface
+import { config } from "./config" // Import config
 import { Client, GatewayIntentBits, TextChannel } from "discord.js"
 import puppeteer from "puppeteer" // Import puppeteer
 import { PrismaClient } from "@prisma/client" // Import PrismaClient
@@ -18,7 +18,7 @@ async function fetchPrice(url: string): Promise<number | null> {
     browser = await puppeteer.launch({ headless: false }) // Use true for headless mode
     const page = await browser.newPage()
     await page.goto(url) // Use the passed URL
-    await new Promise((resolve) => setTimeout(resolve, 3000)) // Wait for 3 seconds as requested by the user
+    await new Promise((resolve) => setTimeout(resolve, 6000)) // Wait for 6 seconds as requested by the user
 
     // Wait for the price element to be available (still good to have this as a fallback/confirmation)
     await page.waitForSelector("span.spotlight__price", { timeout: 5000 }) // Reduced timeout as we already waited
@@ -51,14 +51,17 @@ async function fetchPrice(url: string): Promise<number | null> {
 }
 
 async function checkPriceAndNotify() {
-  if (config.MONITORED_ITEMS.length === 0) {
+  // Fetch all items to monitor from the database (threshold is now a required field)
+  const itemsToMonitor = await prisma.monitoredItem.findMany()
+
+  if (itemsToMonitor.length === 0) {
     console.warn(
-      "No items configured for monitoring. Please check MONITORED_ITEMS_JSON in your .env file."
+      "No items with a price threshold configured in the database. Please add items to the 'monitored_items' table with a 'threshold' value to monitor them."
     )
     return
   }
 
-  for (const item of config.MONITORED_ITEMS) {
+  for (const item of itemsToMonitor) {
     const timestamp = new Date().toLocaleString()
     console.log(`[${timestamp}] Checking price for: ${item.name} (${item.url})`)
     const currentPrice = await fetchPrice(item.url)
@@ -74,12 +77,11 @@ async function checkPriceAndNotify() {
       `[${timestamp}] Current price for ${item.name}: $${currentPrice}`
     )
 
-    // Save price to database
+    // Save current price to PriceHistory table
     try {
-      await prisma.itemPrice.create({
+      await prisma.priceHistory.create({
         data: {
-          name: item.name,
-          url: item.url,
+          monitoredItemId: item.id,
           price: currentPrice,
           timestamp: new Date(),
         },
@@ -92,7 +94,8 @@ async function checkPriceAndNotify() {
       )
     }
 
-    if (currentPrice < item.threshold) {
+    // Only alert if currentPrice is below the item's threshold
+    if (item.threshold !== null && currentPrice < item.threshold) {
       console.log(
         `[${timestamp}] Price $${currentPrice} for ${item.name} is below threshold $${item.threshold}. Sending alert.`
       )
