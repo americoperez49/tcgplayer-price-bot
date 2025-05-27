@@ -2,15 +2,23 @@ import dotenv from "dotenv"
 dotenv.config() // Load environment variables first
 
 import { config } from "./config" // Import config
-import { Client, GatewayIntentBits, TextChannel } from "discord.js"
+import {
+  GatewayIntentBits,
+  TextChannel,
+  Collection, // Keep Collection if it's used elsewhere for commands
+  Events, // Keep Events if it's used elsewhere
+} from "discord.js"
+import { CustomClient } from "./CustomClient" // Import CustomClient
 import puppeteer from "puppeteer" // Import puppeteer
 import { PrismaClient } from "@prisma/client" // Import PrismaClient
 
 const prisma = new PrismaClient() // Instantiate PrismaClient
 
-const client = new Client({
+const client = new CustomClient({
+  // Use CustomClient
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 })
+// client.commands is now initialized in CustomClient constructor
 
 async function fetchPrice(url: string): Promise<number | null> {
   let browser
@@ -77,20 +85,34 @@ async function checkPriceAndNotify() {
       `[${timestamp}] Current price for ${item.name}: $${currentPrice}`
     )
 
-    // Save current price to PriceHistory table
-    try {
-      await prisma.priceHistory.create({
-        data: {
-          monitoredItemId: item.id,
-          price: currentPrice,
-          timestamp: new Date(),
-        },
-      })
-      console.log(`[${timestamp}] Price for ${item.name} saved to database.`)
-    } catch (dbError) {
-      console.error(
-        `[${timestamp}] Error saving price for ${item.name} to database:`,
-        dbError
+    // Fetch the last recorded price for this item
+    const lastPriceEntry = await prisma.priceHistory.findFirst({
+      where: { monitoredItemId: item.id },
+      orderBy: { timestamp: "desc" },
+    })
+
+    // Only save to database if the price has changed or if it's the first entry
+    if (!lastPriceEntry || lastPriceEntry.price !== currentPrice) {
+      try {
+        await prisma.priceHistory.create({
+          data: {
+            monitoredItemId: item.id,
+            price: currentPrice,
+            timestamp: new Date(),
+          },
+        })
+        console.log(
+          `[${timestamp}] New price $${currentPrice} for ${item.name} saved to database.`
+        )
+      } catch (dbError) {
+        console.error(
+          `[${timestamp}] Error saving new price for ${item.name} to database:`,
+          dbError
+        )
+      }
+    } else {
+      console.log(
+        `[${timestamp}] Price for ${item.name} ($${currentPrice}) has not changed. Not saving to database.`
       )
     }
 
