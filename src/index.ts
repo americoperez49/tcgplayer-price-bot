@@ -8,6 +8,10 @@ import {
   Collection, // Keep Collection if it's used elsewhere for commands
   Events, // Keep Events if it's used elsewhere
   MessageFlags, // Import MessageFlags
+  ModalBuilder, // Import ModalBuilder
+  TextInputBuilder, // Import TextInputBuilder
+  TextInputStyle, // Import TextInputStyle
+  ActionRowBuilder, // Import ActionRowBuilder for modal components
 } from "discord.js"
 import { CustomClient } from "./CustomClient" // Import CustomClient
 import puppeteer from "puppeteer" // Import puppeteer
@@ -19,7 +23,11 @@ const prisma = new PrismaClient() // Instantiate PrismaClient
 
 const client = new CustomClient({
   // Use CustomClient
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers, // Add GuildMembers intent for ownerId access
+  ],
 })
 
 setupCommands() // Setup commands after CustomClient is instantiated
@@ -150,31 +158,250 @@ client.once("ready", () => {
   setInterval(checkPriceAndNotify, config.POLLING_INTERVAL_MS)
 })
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  // Made async
-  if (!interaction.isChatInputCommand()) return
-  const client = interaction.client as CustomClient // Assert as CustomClient
-  const command = client.commands.get(interaction.commandName)
+async function handleDeleteItemSelect(interaction: any) {
+  await interaction.deferUpdate() // Defer the update to the select menu interaction
 
-  if (!command) {
-    console.error(`No command matching ${interaction.commandName} was found.`)
-    return
-  }
+  const itemId = interaction.values[0] // Get the selected item ID
+  const discordUserId = interaction.user.id
+  const isServerOwner = interaction.guild.ownerId === discordUserId
 
   try {
-    await command.execute(interaction)
-  } catch (error) {
-    console.error(error)
-    if (interaction.replied || interaction.deferred) {
+    const existingItem = await prisma.monitoredItem.findUnique({
+      where: { id: itemId },
+    })
+
+    if (!existingItem) {
       await interaction.followUp({
-        content: "There was an error while executing this command!",
-        flags: MessageFlags.Ephemeral,
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
       })
+      return
+    }
+
+    // Ownership check
+    if (!isServerOwner && existingItem.discordUserId !== discordUserId) {
+      await interaction.followUp({
+        content:
+          "You do not have permission to delete this item. Only the server owner or the item's owner can delete it.",
+        ephemeral: true,
+      })
+      return
+    }
+
+    await prisma.monitoredItem.delete({
+      where: { id: itemId },
+    })
+
+    await interaction.followUp({
+      content: `Successfully deleted item "${existingItem.name}" (ID: \`${existingItem.id}\`).`,
+      ephemeral: true,
+    })
+  } catch (error) {
+    console.error("Error deleting item via select menu:", error)
+    await interaction.followUp({
+      content:
+        "Failed to delete item due to a database error. Please check the console for details.",
+      ephemeral: true,
+    })
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+async function handleUpdateItemSelect(interaction: any) {
+  const itemId = interaction.values[0] // Get the selected item ID
+  const discordUserId = interaction.user.id
+  const isServerOwner = interaction.guild.ownerId === discordUserId
+
+  try {
+    const existingItem = await prisma.monitoredItem.findUnique({
+      where: { id: itemId },
+    })
+
+    if (!existingItem) {
+      await interaction.followUp({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+      return
+    }
+
+    // Ownership check
+    if (!isServerOwner && existingItem.discordUserId !== discordUserId) {
+      await interaction.followUp({
+        content:
+          "You do not have permission to update this item. Only the server owner or the item's owner can update it.",
+        ephemeral: true,
+      })
+      return
+    }
+
+    const truncatedName =
+      existingItem.name.length > 30
+        ? existingItem.name.substring(0, 27) + "..."
+        : existingItem.name
+    const modal = new ModalBuilder()
+      .setCustomId(`update_item_modal_${itemId}`)
+      .setTitle(`Update ${truncatedName}`) // Truncate title to fit Discord's 45 char limit
+
+    const nameInput = new TextInputBuilder()
+      .setCustomId("nameInput")
+      .setLabel("Item Name")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setValue(existingItem.name)
+
+    const urlInput = new TextInputBuilder()
+      .setCustomId("urlInput")
+      .setLabel("TCGPlayer URL")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(false)
+      .setValue(existingItem.url)
+
+    const thresholdInput = new TextInputBuilder()
+      .setCustomId("thresholdInput")
+      .setLabel("Price Threshold")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setValue(existingItem.threshold.toString()) // Convert number to string for TextInput
+
+    const firstActionRow =
+      new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput)
+    const secondActionRow =
+      new ActionRowBuilder<TextInputBuilder>().addComponents(urlInput)
+    const thirdActionRow =
+      new ActionRowBuilder<TextInputBuilder>().addComponents(thresholdInput)
+
+    modal.addComponents(firstActionRow, secondActionRow, thirdActionRow)
+
+    await interaction.showModal(modal)
+  } catch (error) {
+    console.error("Error preparing update modal:", error)
+    await interaction.followUp({
+      content: "Failed to prepare update modal due to a database error.",
+      ephemeral: true,
+    })
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+async function handleUpdateItemModalSubmit(interaction: any) {
+  await interaction.deferReply({ ephemeral: true })
+
+  const itemId = interaction.customId.split("_")[3] // Extract ID from customId: 'update_item_modal_ITEM_ID'
+  const newName = interaction.fields.getTextInputValue("nameInput")
+  const newUrl = interaction.fields.getTextInputValue("urlInput")
+  const newThresholdString =
+    interaction.fields.getTextInputValue("thresholdInput")
+  const newThreshold = parseFloat(newThresholdString)
+
+  const discordUserId = interaction.user.id
+  const isServerOwner = interaction.guild.ownerId === discordUserId
+
+  try {
+    const existingItem = await prisma.monitoredItem.findUnique({
+      where: { id: itemId },
+    })
+
+    if (!existingItem) {
+      await interaction.editReply(
+        "Item not found with the provided ID. It might have been deleted already."
+      )
+      return
+    }
+
+    // Ownership check (redundant if modal was properly shown, but good for safety)
+    if (!isServerOwner && existingItem.discordUserId !== discordUserId) {
+      await interaction.editReply(
+        "You do not have permission to update this item."
+      )
+      return
+    }
+
+    const updateData: {
+      name?: string
+      url?: string
+      threshold?: number
+    } = {}
+
+    // Only update if value has changed or is provided
+    if (newName !== existingItem.name && newName !== "")
+      updateData.name = newName
+    if (newUrl !== existingItem.url && newUrl !== "") updateData.url = newUrl
+    if (newThreshold !== existingItem.threshold && !isNaN(newThreshold))
+      updateData.threshold = newThreshold
+
+    if (Object.keys(updateData).length === 0) {
+      await interaction.editReply(
+        "No changes detected or invalid input. Item was not updated."
+      )
+      return
+    }
+
+    const updatedItem = await prisma.monitoredItem.update({
+      where: { id: itemId },
+      data: updateData,
+    })
+
+    await interaction.editReply(
+      `Successfully updated item "${updatedItem.name}" (ID: \`${updatedItem.id}\`).`
+    )
+  } catch (error: any) {
+    if (error.code === "P2002" && error.meta?.target?.includes("url")) {
+      await interaction.editReply(
+        "Failed to update item: An item with this URL already exists."
+      )
     } else {
-      await interaction.reply({
-        content: "There was an error while executing this command!",
-        flags: MessageFlags.Ephemeral,
-      })
+      console.error("Error updating item via modal:", error)
+      await interaction.editReply(
+        "Failed to update item due to a database error. Please check the console for details."
+      )
+    }
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isChatInputCommand()) {
+    const client = interaction.client as CustomClient
+    const command = client.commands.get(interaction.commandName)
+
+    if (!command) {
+      console.error(`No command matching ${interaction.commandName} was found.`)
+      return
+    }
+
+    try {
+      await command.execute(interaction)
+    } catch (error) {
+      console.error(error)
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
+          content: "There was an error while executing this command!",
+          flags: MessageFlags.Ephemeral,
+        })
+      } else {
+        await interaction.reply({
+          content: "There was an error while executing this command!",
+          flags: MessageFlags.Ephemeral,
+        })
+      }
+    }
+  } else if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === "delete_item_select") {
+      await handleDeleteItemSelect(interaction)
+    } else if (interaction.customId === "update_item_select") {
+      // Handle update select menu
+      await handleUpdateItemSelect(interaction)
+    }
+  } else if (interaction.isModalSubmit()) {
+    // Handle modal submissions
+    if (interaction.customId.startsWith("update_item_modal_")) {
+      await handleUpdateItemModalSubmit(interaction)
     }
   }
 })

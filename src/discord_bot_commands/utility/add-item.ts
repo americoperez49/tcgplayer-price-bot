@@ -34,6 +34,14 @@ export default {
     const itemThreshold = interaction.options.getNumber("threshold")
     const discordUserId = interaction.user.id // Get the Discord user ID
 
+    if (itemName.length > 45) {
+      await interaction.reply({
+        content: "Item name cannot exceed 45 characters.",
+        ephemeral: true,
+      })
+      return
+    }
+
     await interaction.deferReply({ ephemeral: true }) // Defer reply as database operation might take time
 
     try {
