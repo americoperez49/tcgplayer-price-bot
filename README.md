@@ -31,7 +31,14 @@ git clone https://github.com/americoperez49/tcgplayer-price-bot.git
 cd tcgplayer-price-bot
 ```
 
-### 2. Environment Variables
+### 2. Install Dependencies
+
+```bash
+
+npm install
+```
+
+### 3. Environment Variables
 
 Create a `.env` file in the root directory of the project with the following variables:
 
@@ -78,14 +85,38 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres?schema=publ
   - For local development with Supabase, use the default value provided which you can get from [Accessing Postgres](https://supabase.com/docs/guides/self-hosting/docker#accessing-postgres). Make sure to use the session based connection.
   - Refer to the "Supabase Backend (Local with Docker)" section below for instructions on setting up your local database.
 
-### 3. Supabase Backend (Local with Docker)
+### 4. Supabase Backend (Local with Docker)
 
 This project uses Supabase for its PostgreSQL database. You can run a local instance using Docker:
 
 1.  **Start Supabase services:**
 
     ```bash
-    docker compose -f supabase/docker/docker-compose.yml up -d
+    # Get the code
+    git clone --depth 1 https://github.com/supabase/supabase
+
+    # Make your new supabase project directory
+    mkdir supabase-project
+
+    # Tree should look like this
+    # .
+    # ├── supabase
+    # └── supabase-project
+
+    # Copy the compose files over to your project
+    cp -rf supabase/docker/* supabase-project
+
+    # Copy the fake env vars
+    cp supabase/docker/.env.example supabase-project/.env
+
+    # Switch to your project directory
+    cd supabase-project
+
+    # Pull the latest images
+    docker compose pull
+
+    # Start the services (in detached mode)
+    docker compose up -d
     ```
 
     This will start PostgreSQL, PostgREST, and other Supabase services. The database will be accessible at `localhost:5432`.
@@ -96,20 +127,21 @@ This project uses Supabase for its PostgreSQL database. You can run a local inst
     docker compose -f supabase/docker/docker-compose.yml ps
     ```
 
-    Ensure all services are running.
+    Ensure all services are running. If the pooler service keeps restarting, you're probably encountering a SyntaxError due to unexpected carriage return characters (\r, Unicode code point U+000D) in your configuration file. (docker/volumes/pooler/pooler.exs).
+    You need to save the file with LF line ending. Easy way is to use VSCode.
+
+    In Visual Studio Code:
+    Click on the line ending indicator in the bottom-right corner of the window (it might display "CRLF").
+    Select "LF" to convert the file to Unix-style line endings.
+    Save the file.
 
 3.  **Run Prisma Migrations:**
     Once the Supabase database is running, apply the Prisma migrations to set up your database schema:
     ```bash
+    cd ..
     npx prisma migrate dev
     ```
     You might be prompted to name the migration if there are new schema changes.
-
-### 4. Install Dependencies
-
-```bash
-npm install
-```
 
 ### 5. Build the Project
 
