@@ -7,10 +7,13 @@ import {
   TextChannel,
   Collection, // Keep Collection if it's used elsewhere for commands
   Events, // Keep Events if it's used elsewhere
+  MessageFlags, // Import MessageFlags
 } from "discord.js"
 import { CustomClient } from "./CustomClient" // Import CustomClient
 import puppeteer from "puppeteer" // Import puppeteer
 import { PrismaClient } from "@prisma/client" // Import PrismaClient
+import path from "path"
+import fs from "fs"
 
 const prisma = new PrismaClient() // Instantiate PrismaClient
 
@@ -18,7 +21,33 @@ const client = new CustomClient({
   // Use CustomClient
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 })
+
+setupCommands() // Setup commands after CustomClient is instantiated
 // client.commands is now initialized in CustomClient constructor
+
+function setupCommands() {
+  const foldersPath = path.join(__dirname, "discord_bot_commands") // Corrected path
+  const commandFolders = fs.readdirSync(foldersPath)
+
+  for (const folder of commandFolders) {
+    const commandsPath = path.join(foldersPath, folder)
+    const commandFiles = fs
+      .readdirSync(commandsPath)
+      .filter((file) => file.endsWith(".js"))
+    for (const file of commandFiles) {
+      const filePath = path.join(commandsPath, file)
+      const command = require(filePath).default // Access the default export
+      // Set a new item in the Collection with the key as the command name and the value as the exported module
+      if ("data" in command && "execute" in command) {
+        client.commands.set(command.data.name, command)
+      } else {
+        console.log(
+          `[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`
+        )
+      }
+    }
+  }
+}
 
 async function fetchPrice(url: string): Promise<number | null> {
   let browser
@@ -85,39 +114,9 @@ async function checkPriceAndNotify() {
       `[${timestamp}] Current price for ${item.name}: $${currentPrice}`
     )
 
-    // Fetch the last recorded price for this item
-    const lastPriceEntry = await prisma.priceHistory.findFirst({
-      where: { monitoredItemId: item.id },
-      orderBy: { timestamp: "desc" },
-    })
-
-    // Only save to database if the price has changed or if it's the first entry
-    if (!lastPriceEntry || lastPriceEntry.price !== currentPrice) {
-      try {
-        await prisma.priceHistory.create({
-          data: {
-            monitoredItemId: item.id,
-            price: currentPrice,
-            timestamp: new Date(),
-          },
-        })
-        console.log(
-          `[${timestamp}] New price $${currentPrice} for ${item.name} saved to database.`
-        )
-      } catch (dbError) {
-        console.error(
-          `[${timestamp}] Error saving new price for ${item.name} to database:`,
-          dbError
-        )
-      }
-    } else {
-      console.log(
-        `[${timestamp}] Price for ${item.name} ($${currentPrice}) has not changed. Not saving to database.`
-      )
-    }
-
     // Only alert if currentPrice is below the item's threshold
-    if (item.threshold !== null && currentPrice < item.threshold) {
+    if (currentPrice < item.threshold) {
+      // threshold is now required, so no need for null check
       console.log(
         `[${timestamp}] Price $${currentPrice} for ${item.name} is below threshold $${item.threshold}. Sending alert.`
       )
@@ -149,6 +148,35 @@ client.once("ready", () => {
   console.log("Starting price monitoring...")
   checkPriceAndNotify() // Initial check
   setInterval(checkPriceAndNotify, config.POLLING_INTERVAL_MS)
+})
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  // Made async
+  if (!interaction.isChatInputCommand()) return
+  const client = interaction.client as CustomClient // Assert as CustomClient
+  const command = client.commands.get(interaction.commandName)
+
+  if (!command) {
+    console.error(`No command matching ${interaction.commandName} was found.`)
+    return
+  }
+
+  try {
+    await command.execute(interaction)
+  } catch (error) {
+    console.error(error)
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({
+        content: "There was an error while executing this command!",
+        flags: MessageFlags.Ephemeral,
+      })
+    } else {
+      await interaction.reply({
+        content: "There was an error while executing this command!",
+        flags: MessageFlags.Ephemeral,
+      })
+    }
+  }
 })
 
 console.log("Logging in to Discord...")

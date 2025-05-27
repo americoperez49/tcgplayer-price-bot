@@ -9,6 +9,15 @@
       "program": "${workspaceFolder}/dist/index.js",
       "preLaunchTask": "npm: build",
       "outFiles": ["${workspaceFolder}/dist/**/*.js"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Launch Deploy Commands",
+      "skipFiles": ["<node_internals>/**"],
+      "program": "${workspaceFolder}/dist/deploy-commands.js",
+      "preLaunchTask": "npm: build",
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"]
     }
   ]
 }

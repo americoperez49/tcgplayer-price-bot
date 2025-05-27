@@ -11,23 +11,15 @@ datasource db {
 }
 
 model MonitoredItem {
-  id        Int      @id @default(autoincrement())
-  name      String
-  url       String   @unique // URL should be unique for monitored items
-  threshold Float
+  id            String   @id @default(uuid()) // Changed to GUID (UUID)
+  name          String
+  url           String   // Removed @unique
+  threshold     Float
+  discordUserId String   // Made required
 
-  prices    PriceHistory[] // Relation to PriceHistory
+  // Removed prices relation as PriceHistory table is being removed
 
   @@map("monitored_items") // Map to a snake_case table name
 }
 
-model PriceHistory {
-  id              Int      @id @default(autoincrement())
-  monitoredItemId Int
-  price           Float
-  timestamp       DateTime @default(now())
-
-  monitoredItem   MonitoredItem @relation(fields: [monitoredItemId], references: [id])
-
-  @@map("price_history") // Map to a snake_case table name
-}
+// Removed PriceHistory model as per user request
