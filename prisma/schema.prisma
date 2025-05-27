@@ -10,16 +10,32 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Url {
+  id            String          @id @default(uuid())
+  url           String          @unique
+  monitoredItems MonitoredItem[]
+  priceHistory  PriceHistory[] // Add this line
+
+  @@map("urls")
+}
+
 model MonitoredItem {
   id            String   @id @default(uuid()) // Changed to GUID (UUID)
   name          String
-  url           String   // Removed @unique
   threshold     Float
   discordUserId String   // Made required
-
-  // Removed prices relation as PriceHistory table is being removed
+  urlId         String
+  url           Url      @relation(fields: [urlId], references: [id])
 
   @@map("monitored_items") // Map to a snake_case table name
 }
 
-// Removed PriceHistory model as per user request
+model PriceHistory {
+  id        String   @id @default(uuid())
+  urlId     String
+  url       Url      @relation(fields: [urlId], references: [id])
+  price     Float
+  timestamp DateTime @default(now())
+
+  @@map("price_history")
+}

@@ -19,10 +19,13 @@ export default {
     let items
     try {
       if (isServerOwner) {
-        items = await prisma.monitoredItem.findMany()
+        items = await prisma.monitoredItem.findMany({
+          include: { url: true }, // Include the related Url data
+        })
       } else {
         items = await prisma.monitoredItem.findMany({
           where: { discordUserId: discordUserId },
+          include: { url: true }, // Include the related Url data
         })
       }
 
@@ -39,7 +42,7 @@ export default {
       items.forEach((item: any) => {
         replyMessage +=
           `**Name:** ${item.name}\n` +
-          `**URL:** ${item.url}\n` +
+          `**URL:** ${item.url.url}\n` + // Access url from the relation
           `**Threshold:** $${item.threshold}\n` +
           `**Added by:** <@${item.discordUserId}>\n` +
           `**ID:** \`${item.id}\`\n\n`

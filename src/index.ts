@@ -97,7 +97,9 @@ async function fetchPrice(url: string): Promise<number | null> {
 
 async function checkPriceAndNotify() {
   // Fetch all items to monitor from the database (threshold is now a required field)
-  const itemsToMonitor = await prisma.monitoredItem.findMany()
+  const itemsToMonitor = await prisma.monitoredItem.findMany({
+    include: { url: true }, // Include the related Url data
+  })
 
   if (itemsToMonitor.length === 0) {
     console.warn(
@@ -108,8 +110,10 @@ async function checkPriceAndNotify() {
 
   for (const item of itemsToMonitor) {
     const timestamp = new Date().toLocaleString()
-    console.log(`[${timestamp}] Checking price for: ${item.name} (${item.url})`)
-    const currentPrice = await fetchPrice(item.url)
+    console.log(
+      `[${timestamp}] Checking price for: ${item.name} (${item.url.url})`
+    ) // Access url from the relation
+    const currentPrice = await fetchPrice(item.url.url) // Pass the actual URL
 
     if (currentPrice === null) {
       console.log(
@@ -118,9 +122,34 @@ async function checkPriceAndNotify() {
       continue // Move to the next item
     }
 
+    // Fetch the last recorded price for this URL
+    const lastPriceRecord = await prisma.priceHistory.findFirst({
+      where: { urlId: item.urlId },
+      orderBy: { timestamp: "desc" },
+    })
+    const lastRecordedPrice = lastPriceRecord ? lastPriceRecord.price : null
+
     console.log(
       `[${timestamp}] Current price for ${item.name}: $${currentPrice}`
     )
+    if (lastRecordedPrice !== null) {
+      console.log(
+        `[${timestamp}] Last recorded price for ${item.name}: $${lastRecordedPrice}`
+      )
+    }
+
+    // Add entry to PriceHistory only if price has changed or it's the first entry
+    if (lastRecordedPrice === null || currentPrice !== lastRecordedPrice) {
+      await prisma.priceHistory.create({
+        data: {
+          urlId: item.urlId,
+          price: currentPrice,
+        },
+      })
+      console.log(
+        `[${timestamp}] Price change detected for ${item.name}. New price history entry added.`
+      )
+    }
 
     // Only alert if currentPrice is below the item's threshold
     if (currentPrice < item.threshold) {
@@ -137,8 +166,8 @@ async function checkPriceAndNotify() {
             `Item: ${item.name}\n` +
             `The price has dropped to $${currentPrice}!\n` +
             `Threshold: $${item.threshold}\n` +
-            `Link: ${item.url}`
-        )
+            `Link: ${item.url.url}`
+        ) // Access url from the relation
       } else {
         console.error(`Could not find channel with ID: ${config.CHANNEL_ID}`)
       }
@@ -217,6 +246,7 @@ async function handleUpdateItemSelect(interaction: any) {
   try {
     const existingItem = await prisma.monitoredItem.findUnique({
       where: { id: itemId },
+      include: { url: true }, // Include the related Url data
     })
 
     if (!existingItem) {
@@ -258,7 +288,7 @@ async function handleUpdateItemSelect(interaction: any) {
       .setLabel("TCGPlayer URL")
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
-      .setValue(existingItem.url)
+      .setValue(existingItem.url.url) // Access url from the relation
 
     const thresholdInput = new TextInputBuilder()
       .setCustomId("thresholdInput")
@@ -304,6 +334,7 @@ async function handleUpdateItemModalSubmit(interaction: any) {
   try {
     const existingItem = await prisma.monitoredItem.findUnique({
       where: { id: itemId },
+      include: { url: true }, // Include the related Url data
     })
 
     if (!existingItem) {
@@ -323,16 +354,31 @@ async function handleUpdateItemModalSubmit(interaction: any) {
 
     const updateData: {
       name?: string
-      url?: string
+      urlId?: string // Change from url to urlId
       threshold?: number
     } = {}
 
     // Only update if value has changed or is provided
-    if (newName !== existingItem.name && newName !== "")
+    if (newName !== existingItem.name && newName !== "") {
       updateData.name = newName
-    if (newUrl !== existingItem.url && newUrl !== "") updateData.url = newUrl
-    if (newThreshold !== existingItem.threshold && !isNaN(newThreshold))
+    }
+
+    if (newUrl !== existingItem.url.url && newUrl !== "") {
+      let urlRecord = await prisma.url.findUnique({
+        where: { url: newUrl },
+      })
+
+      if (!urlRecord) {
+        urlRecord = await prisma.url.create({
+          data: { url: newUrl },
+        })
+      }
+      updateData.urlId = urlRecord.id // Update urlId
+    }
+
+    if (newThreshold !== existingItem.threshold && !isNaN(newThreshold)) {
       updateData.threshold = newThreshold
+    }
 
     if (Object.keys(updateData).length === 0) {
       await interaction.editReply(
@@ -351,8 +397,9 @@ async function handleUpdateItemModalSubmit(interaction: any) {
     )
   } catch (error: any) {
     if (error.code === "P2002" && error.meta?.target?.includes("url")) {
+      // Adjust error message for unique URL constraint on the Url table
       await interaction.editReply(
-        "Failed to update item: An item with this URL already exists."
+        "Failed to update item: The provided URL is already associated with another item."
       )
     } else {
       console.error("Error updating item via modal:", error)

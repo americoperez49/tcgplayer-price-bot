@@ -45,10 +45,20 @@ export default {
     await interaction.deferReply({ ephemeral: true }) // Defer reply as database operation might take time
 
     try {
+      let urlRecord = await prisma.url.findUnique({
+        where: { url: itemUrl },
+      })
+
+      if (!urlRecord) {
+        urlRecord = await prisma.url.create({
+          data: { url: itemUrl },
+        })
+      }
+
       const newItem = await prisma.monitoredItem.create({
         data: {
           name: itemName,
-          url: itemUrl,
+          urlId: urlRecord.id, // Use the ID from the Url record
           threshold: itemThreshold,
           discordUserId: discordUserId, // Include the Discord user ID
         },
