@@ -1,0 +1,39 @@
+<div class="url-list-container">
+  <h2>Monitored URLs</h2>
+
+  <div *ngIf="errorMessage" class="error-message">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="urls.length > 0" class="url-cards-container">
+    <div
+      *ngFor="let urlItem of urls"
+      class="url-card"
+      (click)="viewPriceHistory(urlItem.url)"
+    >
+      <img
+        *ngIf="urlItem.imageUrl"
+        [src]="urlItem.imageUrl"
+        alt="Item Image"
+        class="item-image"
+      />
+      <div class="card-content">
+        <h3>{{ urlItem.monitoredItemName || "N/A" }}</h3>
+        <p *ngIf="urlItem.latestPrice !== null" class="latest-price">
+          Latest Price:
+          {{ urlItem.latestPrice | currency : "USD" : "symbol" : "1.2-2" }}
+        </p>
+        <p *ngIf="urlItem.latestPrice === null" class="latest-price no-price">
+          Latest Price: N/A
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="urls.length === 0 && !errorMessage" class="no-urls-message">
+    <p>
+      No URLs are currently being monitored. Add items using the Discord bot to
+      see them here.
+    </p>
+  </div>
+</div>

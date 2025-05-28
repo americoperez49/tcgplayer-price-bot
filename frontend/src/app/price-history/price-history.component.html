@@ -1,0 +1,31 @@
+<div class="price-history-container">
+  <h2>
+    Price History for: <br /><a [href]="url" target="_blank">{{ url }}</a>
+  </h2>
+
+  <div *ngIf="errorMessage" class="error-message">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="priceHistory.length > 0" class="chart-section">
+    <div class="chart-wrapper">
+      <apx-chart
+        [series]="chartOptions.series!"
+        [chart]="chartOptions.chart!"
+        [xaxis]="chartOptions.xaxis!"
+        [dataLabels]="chartOptions.dataLabels!"
+        [stroke]="chartOptions.stroke!"
+        [tooltip]="chartOptions.tooltip!"
+        [title]="chartOptions.title!"
+        [yaxis]="chartOptions.yaxis!"
+      ></apx-chart>
+    </div>
+  </div>
+
+  <div
+    *ngIf="priceHistory.length === 0 && !errorMessage"
+    class="no-data-message"
+  >
+    <p>No price history found for this URL.</p>
+  </div>
+</div>
