@@ -228,10 +228,13 @@ async function checkPriceAndNotify() {
 
   for (const item of itemsToMonitor) {
     const timestamp = new Date().toLocaleString()
+    const effectiveCondition = item.isFoil
+      ? `${item.condition}Foil`
+      : item.condition // Construct effective condition
     console.log(
-      `[${timestamp}] Checking price for: ${item.name} (${item.url.url}) with condition: ${item.condition}`
+      `[${timestamp}] Checking price for: ${item.name} (${item.url.url}) with condition: ${effectiveCondition}`
     ) // Access url from the relation
-    const itemDetails = await fetchItemDetails(item.url.url, item.condition) // Pass item.condition
+    const itemDetails = await fetchItemDetails(item.url.url, effectiveCondition) // Pass effectiveCondition
 
     const currentPrice = itemDetails.price
     const scrapedCondition = itemDetails.condition
@@ -273,7 +276,10 @@ async function checkPriceAndNotify() {
     }
 
     // Only alert if currentPrice is below the item's threshold AND condition matches
-    if (currentPrice < item.threshold && scrapedCondition === item.condition) {
+    if (
+      currentPrice < item.threshold &&
+      scrapedCondition === effectiveCondition
+    ) {
       console.log(
         `[${timestamp}] Price $${currentPrice} for ${item.name} (Condition: ${scrapedCondition}) is below threshold $${item.threshold} and condition matches. Sending alert.`
       )
@@ -435,6 +441,13 @@ async function handleUpdateItemSelect(interaction: any) {
       .setRequired(false)
       .setValue(existingItem.condition) // Set the current condition
 
+    const isFoilInput = new TextInputBuilder()
+      .setCustomId("isFoilInput")
+      .setLabel("Is Foil? (true/false)")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setValue(existingItem.isFoil.toString()) // Set current foil status
+
     const firstActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput)
     const secondActionRow =
@@ -443,13 +456,16 @@ async function handleUpdateItemSelect(interaction: any) {
       new ActionRowBuilder<TextInputBuilder>().addComponents(thresholdInput)
     const fourthActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(conditionInput) // New row for condition
+    const fifthActionRow =
+      new ActionRowBuilder<TextInputBuilder>().addComponents(isFoilInput) // New row for isFoil
 
     modal.addComponents(
       firstActionRow,
       secondActionRow,
       thirdActionRow,
-      fourthActionRow
-    ) // Add the new row
+      fourthActionRow,
+      fifthActionRow
+    ) // Add all rows
 
     await interaction.showModal(modal)
   } catch (error) {
@@ -473,6 +489,7 @@ async function handleUpdateItemModalSubmit(interaction: any) {
     interaction.fields.getTextInputValue("thresholdInput")
   const newThreshold = parseFloat(newThresholdString)
   const newCondition = interaction.fields.getTextInputValue("conditionInput") // Get the new condition
+  const newIsFoilString = interaction.fields.getTextInputValue("isFoilInput") // Get the new isFoil string
 
   const discordUserId = interaction.user.id
   const isServerOwner = interaction.guild.ownerId === discordUserId
@@ -508,7 +525,23 @@ async function handleUpdateItemModalSubmit(interaction: any) {
         | "LightlyPlayed"
         | "ModeratelyPlayed"
         | "HeavilyPlayed" // Update condition to updateData type
+      isFoil?: boolean // Add isFoil to updateData type
     } = {}
+
+    // Parse and validate newIsFoilString
+    let newIsFoil: boolean | undefined
+    if (newIsFoilString !== "") {
+      if (newIsFoilString === "true") {
+        newIsFoil = true
+      } else if (newIsFoilString === "false") {
+        newIsFoil = false
+      } else {
+        await interaction.editReply(
+          "Failed to update item: 'Is Foil?' must be 'true' or 'false'."
+        )
+        return
+      }
+    }
 
     // Only update if value has changed or is provided
     if (newName !== existingItem.name && newName !== "") {
@@ -556,6 +589,11 @@ async function handleUpdateItemModalSubmit(interaction: any) {
 
     if (newThreshold !== existingItem.threshold && !isNaN(newThreshold)) {
       updateData.threshold = newThreshold
+    }
+
+    // Only update isFoil if value has changed and is valid
+    if (newIsFoil !== undefined && newIsFoil !== existingItem.isFoil) {
+      updateData.isFoil = newIsFoil
     }
 
     if (Object.keys(updateData).length === 0) {

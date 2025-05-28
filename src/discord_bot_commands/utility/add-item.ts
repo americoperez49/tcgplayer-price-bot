@@ -39,6 +39,12 @@ export default {
           { name: "Moderately Played", value: "ModeratelyPlayed" },
           { name: "Heavily Played", value: "HeavilyPlayed" }
         )
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName("foil")
+        .setDescription("Is the item a foil version?")
+        .setRequired(false)
     ),
   async execute(interaction: any) {
     // Use 'any' for interaction for simplicity
@@ -46,6 +52,7 @@ export default {
     const itemUrl = interaction.options.getString("url")
     const itemThreshold = interaction.options.getNumber("threshold")
     const itemCondition = interaction.options.getString("condition") // Get the condition
+    const isFoil = interaction.options.getBoolean("foil") ?? false // Get isFoil, default to false
     const discordUserId = interaction.user.id // Get the Discord user ID
 
     if (itemName.length > 45) {
@@ -75,6 +82,7 @@ export default {
           urlId: urlRecord.id, // Use the ID from the Url record
           threshold: itemThreshold,
           condition: itemCondition, // Include the condition
+          isFoil: isFoil, // Include isFoil
           discordUserId: discordUserId, // Include the Discord user ID
         },
       })

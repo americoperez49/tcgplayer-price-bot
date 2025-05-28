@@ -42,7 +42,7 @@ export default {
       items.forEach((item: any) => {
         replyMessage +=
           `**Name:** ${item.name}\n` +
-          `**Condition:** ${item.condition}\n` + // Display the condition
+          `**Condition:** ${item.condition}${item.isFoil ? " (Foil)" : ""}\n` + // Display condition and foil status
           `**URL:** ${item.url.url}\n` + // Access url from the relation
           `**Threshold:** $${item.threshold}\n` +
           `**Added by:** <@${item.discordUserId}>\n` +

@@ -23,6 +23,7 @@ model MonitoredItem {
   id            String    @id @default(uuid()) // Changed to GUID (UUID)
   name          String
   condition     Condition @default(NearMint) // New field
+  isFoil        Boolean   @default(false) // New field
   threshold     Float
   discordUserId String    // Made required
   urlId         String
