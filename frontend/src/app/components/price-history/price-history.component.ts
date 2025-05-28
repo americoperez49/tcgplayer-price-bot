@@ -4,7 +4,7 @@ import { ActivatedRoute } from '@angular/router'; // Import ActivatedRoute
 import {
   PriceHistoryService,
   PriceHistoryEntry,
-} from '../services/price-history.service'; // Updated path
+} from '../../services/price-history.service'; // Updated path
 import {
   ChartComponent,
   ApexAxisChartSeries,
@@ -30,9 +30,9 @@ export type ChartOptions = {
 };
 
 @Component({
-  selector: 'app-price-history',
+  selector: 'app-components-price-history', // Updated selector
   standalone: true,
-  imports: [CommonModule, NgApexchartsModule], // Removed FormsModule
+  imports: [CommonModule, NgApexchartsModule],
   templateUrl: './price-history.component.html',
   styleUrl: './price-history.component.scss',
 })
@@ -130,14 +130,16 @@ export class PriceHistoryComponent implements OnInit {
   fetchPriceHistory(): void {
     this.errorMessage = null; // Clear previous errors
     this.priceHistoryService.getPriceHistory(this.url).subscribe({
-      next: (data) => {
+      next: (data: PriceHistoryEntry[]) => {
+        // Explicitly type data
         this.priceHistory = data;
         if (this.priceHistory.length === 0) {
           this.errorMessage = 'No price history found for this URL.';
         }
         this.updateChart();
       },
-      error: (err) => {
+      error: (err: any) => {
+        // Explicitly type err
         console.error('Error fetching price history:', err);
         this.errorMessage =
           err.error?.message ||

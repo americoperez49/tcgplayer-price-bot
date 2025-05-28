@@ -3,11 +3,11 @@ import { CommonModule } from '@angular/common';
 import {
   PriceHistoryService,
   MonitoredUrl,
-} from '../services/price-history.service'; // Updated path
+} from '../../services/price-history.service'; // Updated path
 import { Router } from '@angular/router';
 
 @Component({
-  selector: 'app-url-list',
+  selector: 'app-components-url-list', // Updated selector
   standalone: true,
   imports: [CommonModule],
   templateUrl: './url-list.component.html',
@@ -28,14 +28,16 @@ export class UrlListComponent implements OnInit {
 
   fetchUrls(): void {
     this.priceHistoryService.getAllUrls().subscribe({
-      next: (data) => {
+      next: (data: MonitoredUrl[]) => {
+        // Explicitly type data
         this.urls = data;
         if (this.urls.length === 0) {
           this.errorMessage =
             'No URLs found to monitor. Please add items to the bot.';
         }
       },
-      error: (err) => {
+      error: (err: any) => {
+        // Explicitly type err
         console.error('Error fetching URLs:', err);
         this.errorMessage =
           'Failed to fetch URLs. Please ensure the backend API is running.';
