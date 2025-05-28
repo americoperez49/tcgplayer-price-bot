@@ -21,8 +21,24 @@ import { PrismaClient } from "@prisma/client" // Import PrismaClient
 import path from "path"
 import fs from "fs"
 import { all } from "axios"
+import express from "express" // Import express
+import cors from "cors" // Import cors
+import priceHistoryRouter from "./api/price-history" // Import the price history router
 
 const prisma = new PrismaClient() // Instantiate PrismaClient
+
+// Initialize Express app
+const app = express()
+app.use(cors()) // Enable CORS for all routes
+app.use(express.json()) // Enable JSON body parsing
+
+// Mount API routers
+app.use("/api", priceHistoryRouter)
+
+// Start the API server
+app.listen(config.API_PORT, () => {
+  console.log(`API server listening on port ${config.API_PORT}`)
+})
 
 const client = new CustomClient({
   // Use CustomClient
@@ -347,7 +363,9 @@ async function checkPriceAndNotify() {
         })
 
         const uniqueUserIds = [
-          ...new Set(usersToNotify.map((u) => u.discordUserId)),
+          ...new Set(
+            usersToNotify.map((u: { discordUserId: string }) => u.discordUserId)
+          ),
         ]
         const mentions = uniqueUserIds.map((id) => `<@${id}>`).join(" ")
 
