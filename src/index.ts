@@ -63,7 +63,12 @@ function setupCommands() {
 async function fetchItemDetails(
   url: string,
   targetCondition: string // Add targetCondition parameter
-): Promise<{ price: number | null; condition: string | null }> {
+): Promise<{
+  price: number | null
+  condition: string | null
+  imageUrl: string | null
+}> {
+  // Add imageUrl to return type
   let browser
   try {
     browser = await puppeteer.launch({ headless: false, devtools: true }) // Launch with devtools enabled
@@ -71,7 +76,7 @@ async function fetchItemDetails(
     await page.goto(url) // Use the passed URL
     await new Promise((resolve) => setTimeout(resolve, 10000)) // Increased wait time for debugging
 
-    // Wait for the price and condition elements to be available
+    // Wait for the price, condition, and image elements to be available
     // Use Promise.all to wait for all potential selectors concurrently
     await Promise.all([
       page
@@ -90,11 +95,15 @@ async function fetchItemDetails(
           timeout: 5000,
         })
         .catch(() => null),
+      page
+        .waitForSelector(".lazy-image__wrapper img", { timeout: 5000 }) // Wait for the image
+        .catch(() => null),
     ])
 
     const details = await page.evaluate((targetConditionInBrowser: string) => {
       // debugger // Breakpoint for debugging in browser DevTools
       const allPrices: { price: number; condition: string | null }[] = []
+      let imageUrl: string | null = null // Initialize imageUrl
 
       // Function to extract price and normalize condition
       const extractPriceAndCondition = (
@@ -114,6 +123,33 @@ async function fetchItemDetails(
           condition = conditionText.replace(/\s/g, "") // Remove spaces
         }
         return { price, condition }
+      }
+
+      // Extract image URL
+      const imageElement = document.querySelector(".lazy-image__wrapper img")
+      if (imageElement instanceof HTMLImageElement) {
+        const srcset = imageElement.srcset
+        if (srcset) {
+          // Parse srcset to find the highest resolution image
+          const sources = srcset.split(",").map((s) => s.trim().split(" "))
+          let highestResUrl: string | null = null
+          let highestWidth = 0
+
+          for (const source of sources) {
+            const url = source[0]
+            const widthMatch = source[1] ? source[1].match(/(\d+)w/) : null
+            if (widthMatch && widthMatch[1]) {
+              const width = parseInt(widthMatch[1], 10)
+              if (width > highestWidth) {
+                highestWidth = width
+                highestResUrl = url
+              }
+            }
+          }
+          imageUrl = highestResUrl || imageElement.src // Fallback to src if srcset parsing fails
+        } else {
+          imageUrl = imageElement.src
+        }
       }
 
       // --- Scrape "Spotlight" details ---
@@ -184,11 +220,16 @@ async function fetchItemDetails(
         correspondingCondition = allPrices[0].condition
       }
 
-      return { price: lowestPrice, condition: correspondingCondition }
+      return {
+        price: lowestPrice,
+        condition: correspondingCondition,
+        imageUrl: imageUrl,
+      } // Return imageUrl
     }, targetCondition) // Pass targetCondition from Node.js context
 
     console.log(`Raw price found: ${details.price}`)
     console.log(`Raw condition found: ${details.condition}`)
+    console.log(`Image URL found: ${details.imageUrl}`) // Log the found image URL
 
     if (details.price === null) {
       console.warn(`Could not find price on TCGPlayer page for URL: ${url}.`)
@@ -205,7 +246,7 @@ async function fetchItemDetails(
       `Error fetching item details from TCGPlayer for URL: ${url}:`,
       error
     )
-    return { price: null, condition: null }
+    return { price: null, condition: null, imageUrl: null }
   } finally {
     if (browser) {
       await browser.close()
@@ -238,12 +279,24 @@ async function checkPriceAndNotify() {
 
     const currentPrice = itemDetails.price
     const scrapedCondition = itemDetails.condition
+    const scrapedImageUrl = itemDetails.imageUrl // Get the scraped image URL
 
     if (currentPrice === null) {
       console.log(
         `[${timestamp}] Failed to get current price for ${item.name}. Skipping notification.`
       )
       continue // Move to the next item
+    }
+
+    // If the URL record doesn't have an image yet, and we scraped one, store it
+    if (!item.url.imageUrl && scrapedImageUrl) {
+      await prisma.url.update({
+        where: { id: item.url.id },
+        data: { imageUrl: scrapedImageUrl },
+      })
+      console.log(
+        `[${timestamp}] Stored image URL for ${item.name}: ${scrapedImageUrl}`
+      )
     }
 
     // Fetch the last recorded price for this URL
@@ -456,9 +509,15 @@ async function handleUpdateItemSelect(interaction: any) {
       new ActionRowBuilder<TextInputBuilder>().addComponents(thresholdInput)
     const fourthActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(conditionInput) // New row for condition
+    const discordUserNameInput = new TextInputBuilder()
+      .setCustomId("discordUserNameInput")
+      .setLabel("Discord User Name")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setValue(existingItem.discordUserName || "") // Set current username, or empty string if null
+
     const fifthActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(isFoilInput) // New row for isFoil
-
     modal.addComponents(
       firstActionRow,
       secondActionRow,

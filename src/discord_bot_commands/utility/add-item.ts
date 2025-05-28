@@ -54,6 +54,7 @@ export default {
     const itemCondition = interaction.options.getString("condition") // Get the condition
     const isFoil = interaction.options.getBoolean("foil") ?? false // Get isFoil, default to false
     const discordUserId = interaction.user.id // Get the Discord user ID
+    const discordUserName = interaction.user.username // Get the Discord user's username
 
     if (itemName.length > 45) {
       await interaction.reply({
