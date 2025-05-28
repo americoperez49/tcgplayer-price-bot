@@ -1,7 +1,15 @@
 <div class="price-history-container">
-  <h2>
-    Price History for: <br /><a [href]="url" target="_blank">{{ url }}</a>
-  </h2>
+  <div class="header-content">
+    <img
+      *ngIf="imageUrl"
+      [src]="imageUrl"
+      alt="Item Image"
+      class="item-image"
+    />
+    <h2>
+      Price History for: <br /><a [href]="url" target="_blank">{{ url }}</a>
+    </h2>
+  </div>
 
   <div *ngIf="errorMessage" class="error-message">
     {{ errorMessage }}
@@ -27,5 +35,12 @@
     class="no-data-message"
   >
     <p>No price history found for this URL.</p>
+  </div>
+
+  <div *ngIf="discordUserNames.length > 0" class="discord-users-section">
+    <h3>Monitored by:</h3>
+    <ul>
+      <li *ngFor="let user of discordUserNames">{{ user }}</li>
+    </ul>
   </div>
 </div>

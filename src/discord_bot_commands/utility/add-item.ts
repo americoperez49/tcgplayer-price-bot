@@ -85,6 +85,7 @@ export default {
           condition: itemCondition, // Include the condition
           isFoil: isFoil, // Include isFoil
           discordUserId: discordUserId, // Include the Discord user ID
+          discordUserName: discordUserName, // Include the Discord username
         },
       })
 

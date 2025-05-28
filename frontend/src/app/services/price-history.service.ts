@@ -15,6 +15,7 @@ export interface MonitoredUrl {
   imageUrl: string | null;
   monitoredItemName: string | null;
   latestPrice: number | null;
+  discordUserNames: string[];
 }
 
 @Injectable({

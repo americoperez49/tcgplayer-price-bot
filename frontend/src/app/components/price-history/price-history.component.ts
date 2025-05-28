@@ -41,7 +41,9 @@ export class PriceHistoryComponent implements OnInit {
   public chartOptions: Partial<ChartOptions>;
 
   url: string = ''; // Will be populated from route parameter
+  imageUrl: string | null = null; // To store the image URL
   priceHistory: PriceHistoryEntry[] = [];
+  discordUserNames: string[] = []; // To store the list of Discord usernames
   errorMessage: string | null = null;
 
   constructor(
@@ -63,10 +65,10 @@ export class PriceHistoryComponent implements OnInit {
         },
       },
       dataLabels: {
-        enabled: false,
+        enabled: true,
       },
       stroke: {
-        curve: 'straight',
+        curve: 'stepline',
       },
       title: {
         text: 'Price History',
@@ -120,10 +122,27 @@ export class PriceHistoryComponent implements OnInit {
       const encodedUrl = params.get('encodedUrl');
       if (encodedUrl) {
         this.url = decodeURIComponent(encodedUrl);
+        this.fetchMonitoredUrlDetails(); // Fetch URL details including image
         this.fetchPriceHistory();
       } else {
         this.errorMessage = 'No URL provided for price history.';
       }
+    });
+  }
+
+  fetchMonitoredUrlDetails(): void {
+    this.priceHistoryService.getAllUrls().subscribe({
+      next: (urls) => {
+        const monitoredUrl = urls.find((u) => u.url === this.url);
+        if (monitoredUrl) {
+          this.imageUrl = monitoredUrl.imageUrl;
+          this.discordUserNames = monitoredUrl.discordUserNames;
+        }
+      },
+      error: (err) => {
+        console.error('Error fetching monitored URL details:', err);
+        // Optionally set an error message or handle it
+      },
     });
   }
 
