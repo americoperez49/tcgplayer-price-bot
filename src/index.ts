@@ -16,7 +16,7 @@ import {
   StringSelectMenuOptionBuilder, // Import StringSelectMenuOptionBuilder
 } from "discord.js"
 import { CustomClient } from "./CustomClient" // Import CustomClient
-import puppeteer from "puppeteer" // Import puppeteer
+import puppeteer from "puppeteer" // Import puppeteer and Protocol
 import { PrismaClient } from "@prisma/client" // Import PrismaClient
 import path from "path"
 import fs from "fs"
@@ -89,6 +89,16 @@ async function fetchItemDetails(
   try {
     browser = await puppeteer.launch({ headless: false, devtools: true }) // Launch with devtools enabled
     const page = await browser.newPage()
+
+    // Set the cookie for TCGPlayer
+    await browser.defaultBrowserContext().setCookie({
+      name: "product-display-settings",
+      value: "sort=price+shipping&size=25",
+      domain: "www.tcgplayer.com",
+      path: "/",
+      expires: Date.now() / 1000 + 365 * 24 * 60 * 60, // Expires in 1 year
+    })
+
     await page.goto(url) // Use the passed URL
     await new Promise((resolve) => setTimeout(resolve, 10000)) // Increased wait time for debugging
 
