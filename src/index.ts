@@ -20,6 +20,7 @@ import puppeteer from "puppeteer" // Import puppeteer
 import { PrismaClient } from "@prisma/client" // Import PrismaClient
 import path from "path"
 import fs from "fs"
+import { all } from "axios"
 
 const prisma = new PrismaClient() // Instantiate PrismaClient
 
@@ -60,46 +61,131 @@ function setupCommands() {
 }
 
 async function fetchItemDetails(
-  url: string
+  url: string,
+  targetCondition: string // Add targetCondition parameter
 ): Promise<{ price: number | null; condition: string | null }> {
   let browser
   try {
-    browser = await puppeteer.launch({ headless: false }) // Use true for headless mode
+    browser = await puppeteer.launch({ headless: false, devtools: true }) // Launch with devtools enabled
     const page = await browser.newPage()
     await page.goto(url) // Use the passed URL
-    await new Promise((resolve) => setTimeout(resolve, 10000)) // Wait for 6 seconds as requested by the user
+    await new Promise((resolve) => setTimeout(resolve, 10000)) // Increased wait time for debugging
 
     // Wait for the price and condition elements to be available
-    await page.waitForSelector("span.spotlight__price", { timeout: 5000 })
-    await page.waitForSelector("section.spotlight__condition", {
-      timeout: 5000,
-    })
+    // Use Promise.all to wait for all potential selectors concurrently
+    await Promise.all([
+      page
+        .waitForSelector("span.spotlight__price", { timeout: 5000 })
+        .catch(() => null),
+      page
+        .waitForSelector("section.spotlight__condition", { timeout: 5000 })
+        .catch(() => null),
+      page
+        .waitForSelector(".listing-item__listing-data__info__price", {
+          timeout: 5000,
+        })
+        .catch(() => null),
+      page
+        .waitForSelector(".listing-item__listing-data__info__condition a", {
+          timeout: 5000,
+        })
+        .catch(() => null),
+    ])
 
-    const details = await page.evaluate(() => {
-      const priceElement = document.querySelector(".spotlight__price")
-      const conditionElement = document.querySelector(".spotlight__condition")
+    const details = await page.evaluate((targetConditionInBrowser: string) => {
+      // debugger // Breakpoint for debugging in browser DevTools
+      const allPrices: { price: number; condition: string | null }[] = []
 
-      const priceText = priceElement ? priceElement.textContent : null
-      const conditionText = conditionElement
-        ? conditionElement.textContent
-        : null
-
-      let price: number | null = null
-      if (priceText) {
-        const match = priceText.match(/\$([0-9]+\.?[0-9]*)/)
-        if (match && match[1]) {
-          price = parseFloat(match[1])
+      // Function to extract price and normalize condition
+      const extractPriceAndCondition = (
+        priceText: string | null,
+        conditionText: string | null
+      ) => {
+        let price: number | null = null
+        if (priceText) {
+          const match = priceText.match(/\$([0-9]+\.?[0-9]*)/)
+          if (match && match[1]) {
+            price = parseFloat(match[1])
+          }
         }
+
+        let condition: string | null = null
+        if (conditionText) {
+          condition = conditionText.replace(/\s/g, "") // Remove spaces
+        }
+        return { price, condition }
       }
 
-      // Normalize condition text to match enum values (e.g., "Near Mint" -> "NearMint")
-      let condition: string | null = null
-      if (conditionText) {
-        condition = conditionText.replace(/\s/g, "") // Remove spaces
+      // --- Scrape "Spotlight" details ---
+      const spotlightPriceElement = document.querySelector(".spotlight__price")
+      const spotlightConditionElement = document.querySelector(
+        ".spotlight__condition"
+      )
+      const spotlightDetails = extractPriceAndCondition(
+        spotlightPriceElement?.textContent || null,
+        spotlightConditionElement?.textContent || null
+      )
+      if (spotlightDetails.price !== null) {
+        allPrices.push({
+          price: spotlightDetails.price,
+          condition: spotlightDetails.condition,
+        })
       }
 
-      return { price, condition }
-    })
+      // --- Scrape "Listing Item" details ---
+      const listingItems = document.querySelectorAll(".listing-item")
+      listingItems.forEach((itemElement) => {
+        // Check if the item has the ".listing-item__listing-data__listo" class
+        if (itemElement.querySelector(".listing-item__listing-data__listo")) {
+          return // Skip this item if it contains the specified class
+        }
+
+        const listItemPriceElement = itemElement.querySelector(
+          ".listing-item__listing-data__info__price"
+        )
+        const listItemConditionAnchor = itemElement.querySelector(
+          ".listing-item__listing-data__info__condition a"
+        )
+
+        const listItemDetails = extractPriceAndCondition(
+          listItemPriceElement?.textContent || null,
+          listItemConditionAnchor?.textContent || null
+        )
+        if (listItemDetails.price !== null) {
+          allPrices.push({
+            price: listItemDetails.price,
+            condition: listItemDetails.condition,
+          })
+        }
+      })
+
+      // --- Determine the lowest price and its corresponding condition ---
+      let lowestPrice: number | null = null
+      let correspondingCondition: string | null = null
+
+      // Filter by targetConditionInBrowser first
+      const filteredPrices = allPrices.filter(
+        (item) => item.condition === targetConditionInBrowser
+      )
+
+      if (filteredPrices.length > 0) {
+        // Sort by price to find the lowest among matching conditions
+        filteredPrices.sort(
+          (a, b) => (a.price || Infinity) - (b.price || Infinity)
+        )
+        lowestPrice = filteredPrices[0].price
+        correspondingCondition = filteredPrices[0].condition
+      } else if (allPrices.length > 0) {
+        // Fallback: if no matching condition found, use the overall lowest price
+        // This might not be desired, but ensures a price is returned if possible.
+        // Re-sort allPrices if not already sorted by price
+        allPrices.sort((a, b) => (a.price || Infinity) - (b.price || Infinity))
+        lowestPrice = allPrices[0].price
+        correspondingCondition = allPrices[0].condition
+      }
+
+      return { price: lowestPrice, condition: correspondingCondition }
+    }, targetCondition) // Pass targetCondition from Node.js context
 
     console.log(`Raw price found: ${details.price}`)
     console.log(`Raw condition found: ${details.condition}`)
@@ -145,7 +231,7 @@ async function checkPriceAndNotify() {
     console.log(
       `[${timestamp}] Checking price for: ${item.name} (${item.url.url}) with condition: ${item.condition}`
     ) // Access url from the relation
-    const itemDetails = await fetchItemDetails(item.url.url) // Call the new function
+    const itemDetails = await fetchItemDetails(item.url.url, item.condition) // Pass item.condition
 
     const currentPrice = itemDetails.price
     const scrapedCondition = itemDetails.condition
@@ -524,6 +610,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
           flags: MessageFlags.Ephemeral,
         })
       } else {
+        await interaction.reply({
+          content: "There was an error while executing this command!",
+          flags: MessageFlags.Ephemeral,
+        })
         await interaction.reply({
           content: "There was an error while executing this command!",
           flags: MessageFlags.Ephemeral,
