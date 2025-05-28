@@ -4,7 +4,7 @@ import { ActivatedRoute } from '@angular/router'; // Import ActivatedRoute
 import {
   PriceHistoryService,
   PriceHistoryEntry,
-} from './price-history.service';
+} from '../services/price-history.service'; // Updated path
 import {
   ChartComponent,
   ApexAxisChartSeries,

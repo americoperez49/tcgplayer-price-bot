@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import {
   PriceHistoryService,
   MonitoredUrl,
-} from '../price-history/price-history.service';
+} from '../services/price-history.service'; // Updated path
 import { Router } from '@angular/router';
 
 @Component({
