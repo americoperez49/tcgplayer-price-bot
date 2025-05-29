@@ -83,11 +83,12 @@ async function fetchItemDetails(
   targetCondition: string, // Add targetCondition parameter
   sellerVerified: boolean // Add sellerVerified parameter
 ): Promise<{
-  price: number | null
+  basePrice: number | null // New: Base price
+  totalPrice: number | null // New: Total price (including shipping)
   condition: string | null
   imageUrl: string | null
+  shippingCost: number | null
 }> {
-  // Add imageUrl to return type
   let browser
   try {
     browser = await puppeteer.launch({ headless: false, devtools: true }) // Launch with devtools enabled
@@ -143,19 +144,24 @@ async function fetchItemDetails(
 
     const details = await page.evaluate((targetConditionInBrowser: string) => {
       // debugger // Breakpoint for debugging in browser DevTools
-      const allPrices: { price: number; condition: string | null }[] = []
+      const allPrices: {
+        basePrice: number | null
+        shippingCost: number | null
+        totalPrice: number | null
+        condition: string | null
+      }[] = []
       let imageUrl: string | null = null // Initialize imageUrl
 
-      // Function to extract price and normalize condition
-      const extractPriceAndCondition = (
+      // Function to extract base price and normalize condition
+      const extractBasePriceAndCondition = (
         priceText: string | null,
         conditionText: string | null
       ) => {
-        let price: number | null = null
+        let basePrice: number | null = null
         if (priceText) {
           const match = priceText.match(/\$([0-9]+\.?[0-9]*)/)
           if (match && match[1]) {
-            price = parseFloat(match[1])
+            basePrice = parseFloat(match[1])
           }
         }
 
@@ -163,7 +169,7 @@ async function fetchItemDetails(
         if (conditionText) {
           condition = conditionText.replace(/\s/g, "") // Remove spaces
         }
-        return { price, condition }
+        return { basePrice, condition }
       }
 
       // Extract image URL
@@ -198,14 +204,39 @@ async function fetchItemDetails(
       const spotlightConditionElement = document.querySelector(
         ".spotlight__condition"
       )
-      const spotlightDetails = extractPriceAndCondition(
+      const spotlightShippingElement = document.querySelector(
+        ".spotlight__shipping"
+      ) // New: Get shipping element
+      let spotlightShippingCost: number = 0 // Initialize shipping cost for spotlight
+      if (spotlightShippingElement) {
+        if (
+          spotlightShippingElement.textContent?.includes("Shipping: Included")
+        ) {
+          spotlightShippingCost = 0 // Shipping is included
+        } else {
+          const shippingPriceElement = spotlightShippingElement.querySelector(
+            ".shipping-messages__price"
+          )
+          if (shippingPriceElement) {
+            const shippingMatch =
+              shippingPriceElement.textContent?.match(/\$([0-9]+\.?[0-9]*)/)
+            if (shippingMatch && shippingMatch[1]) {
+              spotlightShippingCost = parseFloat(shippingMatch[1])
+            }
+          }
+        }
+      }
+
+      const spotlightDetails = extractBasePriceAndCondition(
         spotlightPriceElement?.textContent || null,
         spotlightConditionElement?.textContent || null
       )
-      if (spotlightDetails.price !== null) {
+      if (spotlightDetails.basePrice !== null) {
         allPrices.push({
-          price: spotlightDetails.price,
+          basePrice: spotlightDetails.basePrice,
+          totalPrice: spotlightDetails.basePrice + spotlightShippingCost, // Calculate total price
           condition: spotlightDetails.condition,
+          shippingCost: spotlightShippingCost, // Store the actual shipping cost
         })
       }
 
@@ -224,21 +255,56 @@ async function fetchItemDetails(
           ".listing-item__listing-data__info__condition a"
         )
 
-        const listItemDetails = extractPriceAndCondition(
+        // Remove local declaration, use the outer one
+        const listingDataInfo = itemElement.querySelector(
+          ".listing-item__listing-data__info"
+        )
+
+        // This `shippingCost` variable is local to the forEach loop iteration
+        let currentItemShippingCost: number = 0 // Declare a new variable for current item's shipping cost
+        // Check the third child of listingDataInfo for "Shipping: Included"
+        if (
+          listingDataInfo &&
+          listingDataInfo.children.length > 2 && // Ensure there's a third child (index 2)
+          (listingDataInfo.children[2] as HTMLElement).innerText?.includes(
+            "Shipping: Included"
+          )
+        ) {
+          // Shipping is included, no need to add anything
+          currentItemShippingCost = 0
+        } else {
+          // Check for shipping-messages__price if shipping is not explicitly included
+          const shippingPriceElement = listingDataInfo?.querySelector(
+            ".shipping-messages__price"
+          )
+          if (shippingPriceElement) {
+            const shippingMatch =
+              shippingPriceElement.textContent?.match(/\$([0-9]+\.?[0-9]*)/)
+            if (shippingMatch && shippingMatch[1]) {
+              currentItemShippingCost = parseFloat(shippingMatch[1])
+            }
+          }
+        }
+
+        const listItemDetails = extractBasePriceAndCondition(
           listItemPriceElement?.textContent || null,
           listItemConditionAnchor?.textContent || null
         )
-        if (listItemDetails.price !== null) {
+        if (listItemDetails.basePrice !== null) {
           allPrices.push({
-            price: listItemDetails.price,
+            basePrice: listItemDetails.basePrice,
+            totalPrice: listItemDetails.basePrice + currentItemShippingCost, // This is the total price
             condition: listItemDetails.condition,
+            shippingCost: currentItemShippingCost, // Store the shipping cost for this specific item
           })
         }
       })
 
       // --- Determine the lowest price and its corresponding condition ---
-      let lowestPrice: number | null = null
+      let lowestBasePrice: number | null = null
+      let lowestTotalPrice: number | null = null
       let correspondingCondition: string | null = null
+      let correspondingShippingCost: number | null = null // New variable to store shipping cost
 
       // Filter by targetConditionInBrowser first
       const filteredPrices = allPrices.filter(
@@ -246,34 +312,50 @@ async function fetchItemDetails(
       )
 
       if (filteredPrices.length > 0) {
-        // Sort by price to find the lowest among matching conditions
+        // Sort by totalPrice to find the lowest among matching conditions
         filteredPrices.sort(
-          (a, b) => (a.price || Infinity) - (b.price || Infinity)
+          (a, b) => (a.totalPrice || Infinity) - (b.totalPrice || Infinity)
         )
-        lowestPrice = filteredPrices[0].price
+        lowestBasePrice = filteredPrices[0].basePrice
+        lowestTotalPrice = filteredPrices[0].totalPrice
         correspondingCondition = filteredPrices[0].condition
+        correspondingShippingCost = filteredPrices[0].shippingCost // Get shipping cost
       } else if (allPrices.length > 0) {
         // Fallback: if no matching condition found, use the overall lowest price
         // This might not be desired, but ensures a price is returned if possible.
-        // Re-sort allPrices if not already sorted by price
-        allPrices.sort((a, b) => (a.price || Infinity) - (b.price || Infinity))
-        lowestPrice = allPrices[0].price
+        // Re-sort allPrices if not already sorted by totalPrice
+        allPrices.sort(
+          (a, b) => (a.totalPrice || Infinity) - (b.totalPrice || Infinity)
+        )
+        lowestBasePrice = allPrices[0].basePrice
+        lowestTotalPrice = allPrices[0].totalPrice
         correspondingCondition = allPrices[0].condition
+        correspondingShippingCost = allPrices[0].shippingCost // Get shipping cost
       }
 
       return {
-        price: lowestPrice,
+        basePrice: lowestBasePrice,
+        totalPrice: lowestTotalPrice,
         condition: correspondingCondition,
         imageUrl: imageUrl,
-      } // Return imageUrl
+        shippingCost: correspondingShippingCost, // Return the corresponding shippingCost
+      }
     }, targetCondition) // Pass targetCondition from Node.js context
 
-    console.log(`Raw price found: ${details.price}`)
-    console.log(`Raw condition found: ${details.condition}`)
-    console.log(`Image URL found: ${details.imageUrl}`) // Log the found image URL
+    console.log(
+      "\n" +
+        `--- Item Details ---\n` +
+        `Base Price:    $${details.basePrice}\n` + // New: Display base price
+        `Shipping:      $${details.shippingCost}\n` +
+        `Total Price:   $${details.totalPrice}\n` + // New: Display total price
+        `Condition:     ${details.condition}\n` +
+        `--------------------` // Add a separator line
+    )
 
-    if (details.price === null) {
-      console.warn(`Could not find price on TCGPlayer page for URL: ${url}.`)
+    if (details.totalPrice === null) {
+      console.warn(
+        `Could not find total price on TCGPlayer page for URL: ${url}.`
+      )
     }
     if (details.condition === null) {
       console.warn(
@@ -287,7 +369,13 @@ async function fetchItemDetails(
       `Error fetching item details from TCGPlayer for URL: ${url}:`,
       error
     )
-    return { price: null, condition: null, imageUrl: null }
+    return {
+      basePrice: null,
+      totalPrice: null,
+      condition: null,
+      imageUrl: null,
+      shippingCost: null,
+    }
   } finally {
     if (browser) {
       await browser.close()
@@ -309,12 +397,13 @@ async function checkPriceAndNotify() {
   }
 
   for (const item of itemsToMonitor) {
-    const timestamp = new Date().toLocaleString()
+    const timestamp = new Date().toISOString()
     const effectiveCondition = item.isFoil
       ? `${item.condition}Foil`
       : item.condition // Construct effective condition
     console.log(
-      `[${timestamp}] Checking price for: ${item.name} (${item.url.url}) with condition: ${effectiveCondition}`
+      "\n" +
+        `[${timestamp}] Checking price for: ${item.name} (Condition: ${effectiveCondition}) \n[${item.url.url}]`
     ) // Access url from the relation
     const itemDetails = await fetchItemDetails(
       item.url.url,
@@ -322,13 +411,13 @@ async function checkPriceAndNotify() {
       item.sellerVerified
     ) // Pass effectiveCondition and sellerVerified
 
-    const currentPrice = itemDetails.price
+    const currentTotalPrice = itemDetails.totalPrice // Use totalPrice for comparison
     const scrapedCondition = itemDetails.condition
     const scrapedImageUrl = itemDetails.imageUrl // Get the scraped image URL
 
-    if (currentPrice === null) {
+    if (currentTotalPrice === null) {
       console.log(
-        `[${timestamp}] Failed to get current price for ${item.name}. Skipping notification.`
+        `[${timestamp}] Failed to get current total price for ${item.name}. Skipping notification.`
       )
       continue // Move to the next item
     }
@@ -352,7 +441,7 @@ async function checkPriceAndNotify() {
     const lastRecordedPrice = lastPriceRecord ? lastPriceRecord.price : null
 
     console.log(
-      `[${timestamp}] Current price for ${item.name}: $${currentPrice}`
+      `[${timestamp}] Current Total Price for ${item.name}: $${currentTotalPrice}`
     )
     if (lastRecordedPrice !== null) {
       console.log(
@@ -361,11 +450,11 @@ async function checkPriceAndNotify() {
     }
 
     // Add entry to PriceHistory only if price has changed or it's the first entry
-    if (lastRecordedPrice === null || currentPrice !== lastRecordedPrice) {
+    if (lastRecordedPrice === null || currentTotalPrice !== lastRecordedPrice) {
       await prisma.priceHistory.create({
         data: {
           urlId: item.urlId,
-          price: currentPrice,
+          price: currentTotalPrice, // Store total price in history
         },
       })
       console.log(
@@ -373,13 +462,13 @@ async function checkPriceAndNotify() {
       )
     }
 
-    // Only alert if currentPrice is below the item's threshold AND condition matches
+    // Only alert if currentTotalPrice is below the item's threshold AND condition matches
     if (
-      currentPrice < item.threshold &&
+      currentTotalPrice < item.threshold &&
       scrapedCondition === effectiveCondition
     ) {
       console.log(
-        `[${timestamp}] Price $${currentPrice} for ${item.name} (Condition: ${scrapedCondition}) is below threshold $${item.threshold} and condition matches. Sending alert.`
+        `[${timestamp}] Total Price $${currentTotalPrice} for ${item.name} (Condition: ${scrapedCondition}) is below threshold $${item.threshold} and condition matches. Sending alert.`
       )
       const channel = (await client.channels.fetch(
         config.CHANNEL_ID
@@ -401,7 +490,8 @@ async function checkPriceAndNotify() {
         await channel.send(
           `${mentions} 🚨 PRICE ALERT! 🚨\n` + // Add mentions here
             `Item: ${item.name} (Condition: ${scrapedCondition})\n` + // Include scraped condition
-            `The price has dropped to $${currentPrice}!\n` +
+            `Base Price: $${itemDetails.basePrice}\n` + // Display base price
+            `Total Price: $${itemDetails.totalPrice}!\n` + // Display total price
             `Threshold: $${item.threshold}\n` +
             `Link: ${item.url.url}`
         ) // Access url from the relation
@@ -410,7 +500,7 @@ async function checkPriceAndNotify() {
       }
     } else {
       console.log(
-        `[${timestamp}] Price $${currentPrice} for ${item.name} (Condition: ${scrapedCondition}) is above or equal to threshold $${item.threshold} or condition does not match. No alert needed.`
+        `[${timestamp}] Total Price $${currentTotalPrice} for ${item.name} (Condition: ${scrapedCondition}) is above or equal to threshold $${item.threshold} or condition does not match. No alert needed.`
       )
     }
     await new Promise((resolve) => setTimeout(resolve, 5000)) // Wait for 5 seconds between items
