@@ -45,6 +45,12 @@ export default {
         .setName("foil")
         .setDescription("Is the item a foil version?")
         .setRequired(false)
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName("seller_verified")
+        .setDescription("Only show prices from verified sellers?")
+        .setRequired(false)
     ),
   async execute(interaction: any) {
     // Use 'any' for interaction for simplicity
@@ -53,6 +59,8 @@ export default {
     const itemThreshold = interaction.options.getNumber("threshold")
     const itemCondition = interaction.options.getString("condition") // Get the condition
     const isFoil = interaction.options.getBoolean("foil") ?? false // Get isFoil, default to false
+    const sellerVerified =
+      interaction.options.getBoolean("seller_verified") ?? false // Get sellerVerified, default to false
     const discordUserId = interaction.user.id // Get the Discord user ID
     const discordUserName = interaction.user.username // Get the Discord user's username
 
@@ -84,6 +92,7 @@ export default {
           threshold: itemThreshold,
           condition: itemCondition, // Include the condition
           isFoil: isFoil, // Include isFoil
+          sellerVerified: sellerVerified, // Include sellerVerified
           discordUserId: discordUserId, // Include the Discord user ID
           discordUserName: discordUserName, // Include the Discord username
         },

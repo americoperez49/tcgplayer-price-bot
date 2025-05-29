@@ -14,6 +14,8 @@ import {
   ActionRowBuilder, // Import ActionRowBuilder for modal components
   StringSelectMenuBuilder, // Import StringSelectMenuBuilder
   StringSelectMenuOptionBuilder, // Import StringSelectMenuOptionBuilder
+  ButtonBuilder, // Import ButtonBuilder
+  ButtonStyle, // Import ButtonStyle
 } from "discord.js"
 import { CustomClient } from "./CustomClient" // Import CustomClient
 import puppeteer from "puppeteer" // Import puppeteer and Protocol
@@ -62,7 +64,7 @@ function setupCommands() {
       .readdirSync(commandsPath)
       .filter((file) => file.endsWith(".js"))
     for (const file of commandFiles) {
-      const filePath = path.join(commandsPath, file)
+      const filePath = path.join(commandsPath, file) // Corrected this line
       const command = require(filePath).default // Access the default export
       // Set a new item in the Collection with the key as the command name and the value as the exported module
       if ("data" in command && "execute" in command) {
@@ -78,7 +80,8 @@ function setupCommands() {
 
 async function fetchItemDetails(
   url: string,
-  targetCondition: string // Add targetCondition parameter
+  targetCondition: string, // Add targetCondition parameter
+  sellerVerified: boolean // Add sellerVerified parameter
 ): Promise<{
   price: number | null
   condition: string | null
@@ -98,6 +101,18 @@ async function fetchItemDetails(
       path: "/",
       expires: Date.now() / 1000 + 365 * 24 * 60 * 60, // Expires in 1 year
     })
+
+    // Conditionally set the SellerVerified cookie
+    if (sellerVerified) {
+      await browser.defaultBrowserContext().setCookie({
+        name: "SearchCriteria",
+        value:
+          "M=1&WantVerifiedSellers=True&WantDirect=False&WantSellersInCart=False&WantWPNSellers=False",
+        domain: "www.tcgplayer.com",
+        path: "/",
+        expires: Date.now() / 1000 + 365 * 24 * 60 * 60, // Expires in 1 year
+      })
+    }
 
     await page.goto(url) // Use the passed URL
     await new Promise((resolve) => setTimeout(resolve, 10000)) // Increased wait time for debugging
@@ -301,7 +316,11 @@ async function checkPriceAndNotify() {
     console.log(
       `[${timestamp}] Checking price for: ${item.name} (${item.url.url}) with condition: ${effectiveCondition}`
     ) // Access url from the relation
-    const itemDetails = await fetchItemDetails(item.url.url, effectiveCondition) // Pass effectiveCondition
+    const itemDetails = await fetchItemDetails(
+      item.url.url,
+      effectiveCondition,
+      item.sellerVerified
+    ) // Pass effectiveCondition and sellerVerified
 
     const currentPrice = itemDetails.price
     const scrapedCondition = itemDetails.condition
@@ -457,6 +476,8 @@ async function handleDeleteItemSelect(interaction: any) {
 }
 
 async function handleUpdateItemSelect(interaction: any) {
+  await interaction.deferUpdate() // Defer the update to the select menu interaction
+
   const itemId = interaction.values[0] // Get the selected item ID
   const discordUserId = interaction.user.id
   const isServerOwner = interaction.guild.ownerId === discordUserId
@@ -486,13 +507,74 @@ async function handleUpdateItemSelect(interaction: any) {
       return
     }
 
+    const freeFormButton = new ButtonBuilder()
+      .setCustomId(`update_free_form_${itemId}`)
+      .setLabel("Update Free Form Fields")
+      .setStyle(ButtonStyle.Primary)
+
+    const selectableButton = new ButtonBuilder()
+      .setCustomId(`update_selectable_${itemId}`)
+      .setLabel("Update Selectable Fields")
+      .setStyle(ButtonStyle.Secondary)
+
+    const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      freeFormButton,
+      selectableButton
+    )
+
+    await interaction.followUp({
+      content: "What type of fields do you want to update?",
+      components: [actionRow],
+      ephemeral: true,
+    })
+  } catch (error) {
+    console.error("Error preparing update options:", error)
+    await interaction.followUp({
+      content: "Failed to prepare update options due to a database error.",
+      ephemeral: true,
+    })
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+async function handleUpdateFreeFormFields(interaction: any) {
+  const itemId = interaction.customId.split("_")[3] // Extract ID from customId: 'update_free_form_ITEM_ID'
+  const discordUserId = interaction.user.id
+  const isServerOwner = interaction.guild.ownerId === discordUserId
+
+  try {
+    const existingItem = await prisma.monitoredItem.findUnique({
+      where: { id: itemId },
+      include: { url: true },
+    })
+
+    if (!existingItem) {
+      await interaction.reply({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+      return
+    }
+
+    if (!isServerOwner && existingItem.discordUserId !== discordUserId) {
+      await interaction.reply({
+        content:
+          "You do not have permission to update this item. Only the server owner or the item's owner can update it.",
+        ephemeral: true,
+      })
+      return
+    }
+
+    const maxNameLength = 45 - "Update Free Form Fields for ".length - 3 // 3 for "..."
     const truncatedName =
-      existingItem.name.length > 30
-        ? existingItem.name.substring(0, 27) + "..."
+      existingItem.name.length > maxNameLength
+        ? existingItem.name.substring(0, maxNameLength) + "..."
         : existingItem.name
     const modal = new ModalBuilder()
-      .setCustomId(`update_item_modal_${itemId}`)
-      .setTitle(`Update ${truncatedName}`) // Truncate title to fit Discord's 45 char limit
+      .setCustomId(`update_free_form_modal_${itemId}`)
+      .setTitle(`Update Free Form Fields for ${truncatedName}`)
 
     const nameInput = new TextInputBuilder()
       .setCustomId("nameInput")
@@ -506,28 +588,14 @@ async function handleUpdateItemSelect(interaction: any) {
       .setLabel("TCGPlayer URL")
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
-      .setValue(existingItem.url.url) // Access url from the relation
+      .setValue(existingItem.url.url)
 
     const thresholdInput = new TextInputBuilder()
       .setCustomId("thresholdInput")
       .setLabel("Price Threshold")
       .setStyle(TextInputStyle.Short)
       .setRequired(false)
-      .setValue(existingItem.threshold.toString()) // Convert number to string for TextInput
-
-    const conditionInput = new TextInputBuilder()
-      .setCustomId("conditionInput")
-      .setLabel("Item Condition (Unopened, Near Mint, etc.)") // Shortened label
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false)
-      .setValue(existingItem.condition) // Set the current condition
-
-    const isFoilInput = new TextInputBuilder()
-      .setCustomId("isFoilInput")
-      .setLabel("Is Foil? (true/false)")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false)
-      .setValue(existingItem.isFoil.toString()) // Set current foil status
+      .setValue(existingItem.threshold.toString())
 
     const firstActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput)
@@ -535,30 +603,15 @@ async function handleUpdateItemSelect(interaction: any) {
       new ActionRowBuilder<TextInputBuilder>().addComponents(urlInput)
     const thirdActionRow =
       new ActionRowBuilder<TextInputBuilder>().addComponents(thresholdInput)
-    const fourthActionRow =
-      new ActionRowBuilder<TextInputBuilder>().addComponents(conditionInput) // New row for condition
-    const discordUserNameInput = new TextInputBuilder()
-      .setCustomId("discordUserNameInput")
-      .setLabel("Discord User Name")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false)
-      .setValue(existingItem.discordUserName || "") // Set current username, or empty string if null
 
-    const fifthActionRow =
-      new ActionRowBuilder<TextInputBuilder>().addComponents(isFoilInput) // New row for isFoil
-    modal.addComponents(
-      firstActionRow,
-      secondActionRow,
-      thirdActionRow,
-      fourthActionRow,
-      fifthActionRow
-    ) // Add all rows
+    modal.addComponents(firstActionRow, secondActionRow, thirdActionRow)
 
     await interaction.showModal(modal)
   } catch (error) {
-    console.error("Error preparing update modal:", error)
-    await interaction.followUp({
-      content: "Failed to prepare update modal due to a database error.",
+    console.error("Error preparing free form update modal:", error)
+    await interaction.reply({
+      content:
+        "Failed to prepare free form update modal due to a database error.",
       ephemeral: true,
     })
   } finally {
@@ -566,25 +619,89 @@ async function handleUpdateItemSelect(interaction: any) {
   }
 }
 
-async function handleUpdateItemModalSubmit(interaction: any) {
-  await interaction.deferReply({ ephemeral: true })
-
-  const itemId = interaction.customId.split("_")[3] // Extract ID from customId: 'update_item_modal_ITEM_ID'
-  const newName = interaction.fields.getTextInputValue("nameInput")
-  const newUrl = interaction.fields.getTextInputValue("urlInput")
-  const newThresholdString =
-    interaction.fields.getTextInputValue("thresholdInput")
-  const newThreshold = parseFloat(newThresholdString)
-  const newCondition = interaction.fields.getTextInputValue("conditionInput") // Get the new condition
-  const newIsFoilString = interaction.fields.getTextInputValue("isFoilInput") // Get the new isFoil string
-
+async function handleUpdateSelectableFields(interaction: any) {
+  const itemId = interaction.customId.split("_")[2] // Extract ID from customId: 'update_selectable_ITEM_ID'
   const discordUserId = interaction.user.id
   const isServerOwner = interaction.guild.ownerId === discordUserId
 
   try {
     const existingItem = await prisma.monitoredItem.findUnique({
       where: { id: itemId },
-      include: { url: true }, // Include the related Url data
+      include: { url: true },
+    })
+
+    if (!existingItem) {
+      await interaction.reply({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+      return
+    }
+
+    if (!isServerOwner && existingItem.discordUserId !== discordUserId) {
+      await interaction.reply({
+        content:
+          "You do not have permission to update this item. Only the server owner or the item's owner can update it.",
+        ephemeral: true,
+      })
+      return
+    }
+
+    const maxNameLength = 45 - "Update Selectable Fields for ".length - 3 // 3 for "..."
+    const truncatedName =
+      existingItem.name.length > maxNameLength
+        ? existingItem.name.substring(0, maxNameLength) + "..."
+        : existingItem.name
+    const modal = new ModalBuilder()
+      .setCustomId(`update_selectable_modal_${itemId}`)
+      .setTitle(`Update Selectable Fields for ${truncatedName}`)
+
+    const conditionInput = new TextInputBuilder()
+      .setCustomId("conditionInput")
+      .setLabel("Item Condition (Unopened, Near Mint, etc.)")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setValue(existingItem.condition)
+
+    const isFoilInput = new TextInputBuilder()
+      .setCustomId("isFoilInput")
+      .setLabel("Is Foil? (true/false)")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setValue(existingItem.isFoil.toString())
+
+    const firstActionRow =
+      new ActionRowBuilder<TextInputBuilder>().addComponents(conditionInput)
+    const secondActionRow =
+      new ActionRowBuilder<TextInputBuilder>().addComponents(isFoilInput)
+
+    modal.addComponents(firstActionRow, secondActionRow)
+
+    await interaction.showModal(modal)
+  } catch (error) {
+    console.error("Error preparing selectable update modal:", error)
+    await interaction.reply({
+      content:
+        "Failed to prepare selectable update modal due to a database error.",
+      ephemeral: true,
+    })
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+async function handleFreeFormModalSubmit(interaction: any) {
+  await interaction.deferReply({ ephemeral: true })
+
+  const itemId = interaction.customId.split("_")[4] // Extract ID from customId: 'update_free_form_modal_ITEM_ID'
+  const discordUserId = interaction.user.id
+  const isServerOwner = interaction.guild.ownerId === discordUserId
+
+  try {
+    const existingItem = await prisma.monitoredItem.findUnique({
+      where: { id: itemId },
+      include: { url: true },
     })
 
     if (!existingItem) {
@@ -594,7 +711,6 @@ async function handleUpdateItemModalSubmit(interaction: any) {
       return
     }
 
-    // Ownership check (redundant if modal was properly shown, but good for safety)
     if (!isServerOwner && existingItem.discordUserId !== discordUserId) {
       await interaction.editReply(
         "You do not have permission to update this item."
@@ -604,64 +720,29 @@ async function handleUpdateItemModalSubmit(interaction: any) {
 
     const updateData: {
       name?: string
-      urlId?: string // Change from url to urlId
+      urlId?: string
       threshold?: number
-      condition?:
-        | "Unopened"
-        | "NearMint"
-        | "LightlyPlayed"
-        | "ModeratelyPlayed"
-        | "HeavilyPlayed" // Update condition to updateData type
-      isFoil?: boolean // Add isFoil to updateData type
     } = {}
 
-    // Parse and validate newIsFoilString
-    let newIsFoil: boolean | undefined
-    if (newIsFoilString !== "") {
-      if (newIsFoilString === "true") {
-        newIsFoil = true
-      } else if (newIsFoilString === "false") {
-        newIsFoil = false
-      } else {
-        await interaction.editReply(
-          "Failed to update item: 'Is Foil?' must be 'true' or 'false'."
-        )
-        return
-      }
-    }
+    let changesMade = false
+    let errorMessage = ""
 
-    // Only update if value has changed or is provided
-    if (newName !== existingItem.name && newName !== "") {
-      updateData.name = newName
-    }
-
-    // Validate and update condition
-    const validConditions = [
-      "Unopened",
-      "NearMint",
-      "LightlyPlayed", // New value
-      "ModeratelyPlayed",
-      "HeavilyPlayed",
-    ] // Updated valid conditions
+    const newName = interaction.fields.getTextInputValue("nameInput")
     if (
-      newCondition !== "" &&
-      newCondition !== existingItem.condition &&
-      validConditions.includes(newCondition)
+      newName !== undefined &&
+      newName !== existingItem.name &&
+      newName !== ""
     ) {
-      updateData.condition = newCondition as
-        | "Unopened"
-        | "NearMint"
-        | "LightlyPlayed" // Update type
-        | "ModeratelyPlayed"
-        | "HeavilyPlayed"
-    } else if (newCondition !== "" && !validConditions.includes(newCondition)) {
-      await interaction.editReply(
-        "Failed to update item: Invalid condition provided. Must be 'Unopened', 'Near Mint', 'Lightly Played', 'Moderately Played', or 'Heavily Played'."
-      )
-      return
+      updateData.name = newName
+      changesMade = true
     }
 
-    if (newUrl !== existingItem.url.url && newUrl !== "") {
+    const newUrl = interaction.fields.getTextInputValue("urlInput")
+    if (
+      newUrl !== undefined &&
+      newUrl !== existingItem.url.url &&
+      newUrl !== ""
+    ) {
       let urlRecord = await prisma.url.findUnique({
         where: { url: newUrl },
       })
@@ -671,19 +752,28 @@ async function handleUpdateItemModalSubmit(interaction: any) {
           data: { url: newUrl },
         })
       }
-      updateData.urlId = urlRecord.id // Update urlId
+      updateData.urlId = urlRecord.id
+      changesMade = true
     }
 
-    if (newThreshold !== existingItem.threshold && !isNaN(newThreshold)) {
-      updateData.threshold = newThreshold
+    const newThresholdString =
+      interaction.fields.getTextInputValue("thresholdInput")
+    if (newThresholdString !== undefined && newThresholdString !== "") {
+      const newThreshold = parseFloat(newThresholdString)
+      if (!isNaN(newThreshold) && newThreshold !== existingItem.threshold) {
+        updateData.threshold = newThreshold
+        changesMade = true
+      } else if (isNaN(newThreshold)) {
+        errorMessage += "Invalid value for Price Threshold. "
+      }
     }
 
-    // Only update isFoil if value has changed and is valid
-    if (newIsFoil !== undefined && newIsFoil !== existingItem.isFoil) {
-      updateData.isFoil = newIsFoil
+    if (errorMessage) {
+      await interaction.editReply(`Failed to update item: ${errorMessage}`)
+      return
     }
 
-    if (Object.keys(updateData).length === 0) {
+    if (!changesMade) {
       await interaction.editReply(
         "No changes detected or invalid input. Item was not updated."
       )
@@ -700,16 +790,129 @@ async function handleUpdateItemModalSubmit(interaction: any) {
     )
   } catch (error: any) {
     if (error.code === "P2002" && error.meta?.target?.includes("url")) {
-      // Adjust error message for unique URL constraint on the Url table
       await interaction.editReply(
         "Failed to update item: The provided URL is already associated with another item."
       )
     } else {
-      console.error("Error updating item via modal:", error)
+      console.error("Error updating free form item via modal:", error)
       await interaction.editReply(
         "Failed to update item due to a database error. Please check the console for details."
       )
     }
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+async function handleSelectableModalSubmit(interaction: any) {
+  await interaction.deferReply({ ephemeral: true })
+
+  const itemId = interaction.customId.split("_")[3] // Extract ID from customId: 'update_selectable_modal_ITEM_ID'
+  const discordUserId = interaction.user.id
+  const isServerOwner = interaction.guild.ownerId === discordUserId
+
+  try {
+    const existingItem = await prisma.monitoredItem.findUnique({
+      where: { id: itemId },
+      include: { url: true },
+    })
+
+    if (!existingItem) {
+      await interaction.editReply(
+        "Item not found with the provided ID. It might have been deleted already."
+      )
+      return
+    }
+
+    if (!isServerOwner && existingItem.discordUserId !== discordUserId) {
+      await interaction.editReply(
+        "You do not have permission to update this item."
+      )
+      return
+    }
+
+    const updateData: {
+      condition?:
+        | "Unopened"
+        | "NearMint"
+        | "LightlyPlayed"
+        | "ModeratelyPlayed"
+        | "HeavilyPlayed"
+      isFoil?: boolean
+    } = {}
+
+    let changesMade = false
+    let errorMessage = ""
+
+    const newCondition = interaction.fields.getTextInputValue("conditionInput")
+    const validConditions = [
+      "Unopened",
+      "NearMint",
+      "LightlyPlayed",
+      "ModeratelyPlayed",
+      "HeavilyPlayed",
+    ]
+    if (newCondition !== undefined && newCondition !== "") {
+      const normalizedNewCondition = newCondition.replace(/\s/g, "")
+      if (
+        normalizedNewCondition !== existingItem.condition &&
+        validConditions.includes(normalizedNewCondition)
+      ) {
+        updateData.condition = normalizedNewCondition as
+          | "Unopened"
+          | "NearMint"
+          | "LightlyPlayed"
+          | "ModeratelyPlayed"
+          | "HeavilyPlayed"
+        changesMade = true
+      } else if (!validConditions.includes(normalizedNewCondition)) {
+        errorMessage +=
+          "Invalid condition provided. Must be 'Unopened', 'Near Mint', 'Lightly Played', 'Moderately Played', or 'Heavily Played'. "
+      }
+    }
+
+    const newIsFoilString = interaction.fields.getTextInputValue("isFoilInput")
+    if (newIsFoilString !== undefined && newIsFoilString !== "") {
+      let newIsFoil: boolean | undefined
+      if (newIsFoilString.toLowerCase() === "true") {
+        newIsFoil = true
+      } else if (newIsFoilString.toLowerCase() === "false") {
+        newIsFoil = false
+      } else {
+        errorMessage += "'Is Foil?' must be 'true' or 'false'. "
+      }
+
+      if (newIsFoil !== undefined && newIsFoil !== existingItem.isFoil) {
+        updateData.isFoil = newIsFoil
+        changesMade = true
+      }
+    }
+
+    if (errorMessage) {
+      await interaction.editReply(`Failed to update item: ${errorMessage}`)
+      return
+    }
+
+    if (!changesMade) {
+      await interaction.editReply(
+        "No changes detected or invalid input. Item was not updated."
+      )
+      return
+    }
+
+    const updatedItem = await prisma.monitoredItem.update({
+      where: { id: itemId },
+      data: updateData,
+    })
+
+    await interaction.editReply(
+      `Successfully updated item "${updatedItem.name}" (ID: \`${updatedItem.id}\`).`
+    )
+  } catch (error: any) {
+    console.error("Error updating selectable item via modal:", error)
+    await interaction.editReply(
+      "Failed to update item due to a database error. Please check the console for details."
+    )
   } finally {
     await prisma.$disconnect()
   }
@@ -752,10 +955,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
       // Handle update select menu
       await handleUpdateItemSelect(interaction)
     }
+  } else if (interaction.isButton()) {
+    if (interaction.customId.startsWith("update_free_form_")) {
+      await handleUpdateFreeFormFields(interaction)
+    } else if (interaction.customId.startsWith("update_selectable_")) {
+      await handleUpdateSelectableFields(interaction)
+    }
   } else if (interaction.isModalSubmit()) {
-    // Handle modal submissions
-    if (interaction.customId.startsWith("update_item_modal_")) {
-      await handleUpdateItemModalSubmit(interaction)
+    if (interaction.customId.startsWith("update_free_form_modal_")) {
+      await handleFreeFormModalSubmit(interaction)
+    } else if (interaction.customId.startsWith("update_selectable_modal_")) {
+      await handleSelectableModalSubmit(interaction)
     }
   }
 })

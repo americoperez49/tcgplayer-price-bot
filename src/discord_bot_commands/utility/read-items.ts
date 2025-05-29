@@ -43,6 +43,7 @@ export default {
         replyMessage +=
           `**Name:** ${item.name}\n` +
           `**Condition:** ${item.condition}${item.isFoil ? " (Foil)" : ""}\n` + // Display condition and foil status
+          `**Seller Verified:** ${item.sellerVerified ? "Yes" : "No"}\n` + // Display sellerVerified status
           `**URL:** ${item.url.url}\n` + // Access url from the relation
           `**Threshold:** $${item.threshold}\n` +
           `**Added by:** <@${item.discordUserId}>\n` +
