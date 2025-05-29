@@ -653,37 +653,113 @@ async function handleUpdateSelectableFields(interaction: any) {
       existingItem.name.length > maxNameLength
         ? existingItem.name.substring(0, maxNameLength) + "..."
         : existingItem.name
-    const modal = new ModalBuilder()
-      .setCustomId(`update_selectable_modal_${itemId}`)
-      .setTitle(`Update Selectable Fields for ${truncatedName}`)
 
-    const conditionInput = new TextInputBuilder()
-      .setCustomId("conditionInput")
-      .setLabel("Item Condition (Unopened, Near Mint, etc.)")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false)
-      .setValue(existingItem.condition)
+    // Item Condition Select Menu
+    const conditionSelect = new StringSelectMenuBuilder()
+      .setCustomId(`update_condition_select_${itemId}`)
+      .setPlaceholder("Select Item Condition")
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setLabel("Unopened")
+          .setValue("Unopened")
+          .setDefault(existingItem.condition === "Unopened"),
+        new StringSelectMenuOptionBuilder()
+          .setLabel("Near Mint")
+          .setValue("NearMint")
+          .setDefault(existingItem.condition === "NearMint"),
+        new StringSelectMenuOptionBuilder()
+          .setLabel("Lightly Played")
+          .setValue("LightlyPlayed")
+          .setDefault(existingItem.condition === "LightlyPlayed"),
+        new StringSelectMenuOptionBuilder()
+          .setLabel("Moderately Played")
+          .setValue("ModeratelyPlayed")
+          .setDefault(existingItem.condition === "ModeratelyPlayed"),
+        new StringSelectMenuOptionBuilder()
+          .setLabel("Heavily Played")
+          .setValue("HeavilyPlayed")
+          .setDefault(existingItem.condition === "HeavilyPlayed")
+      )
 
-    const isFoilInput = new TextInputBuilder()
-      .setCustomId("isFoilInput")
-      .setLabel("Is Foil? (true/false)")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false)
-      .setValue(existingItem.isFoil.toString())
+    // Is Foil Select Menu
+    const isFoilSelect = new StringSelectMenuBuilder()
+      .setCustomId(`update_is_foil_select_${itemId}`)
+      .setPlaceholder("Is the item foil?")
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setLabel("Yes (Foil)")
+          .setValue("true")
+          .setDefault(existingItem.isFoil === true),
+        new StringSelectMenuOptionBuilder()
+          .setLabel("No (Non-Foil)")
+          .setValue("false")
+          .setDefault(existingItem.isFoil === false)
+      )
 
-    const firstActionRow =
-      new ActionRowBuilder<TextInputBuilder>().addComponents(conditionInput)
-    const secondActionRow =
-      new ActionRowBuilder<TextInputBuilder>().addComponents(isFoilInput)
+    // Seller Verified Select Menu
+    const sellerVerifiedSelect = new StringSelectMenuBuilder()
+      .setCustomId(`update_seller_verified_select_${itemId}`)
+      .setPlaceholder("Require verified sellers?")
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setLabel("Yes (Verified Sellers Only)")
+          .setValue("true")
+          .setDefault(existingItem.sellerVerified === true),
+        new StringSelectMenuOptionBuilder()
+          .setLabel("No (Any Seller)")
+          .setValue("false")
+          .setDefault(existingItem.sellerVerified === false)
+      )
 
-    modal.addComponents(firstActionRow, secondActionRow)
+    const submitButton = new ButtonBuilder()
+      .setCustomId(`submit_selectable_update_${itemId}`)
+      .setLabel("Submit Changes")
+      .setStyle(ButtonStyle.Success)
 
-    await interaction.showModal(modal)
+    const cancelButton = new ButtonBuilder()
+      .setCustomId(`cancel_selectable_update_${itemId}`)
+      .setLabel("Cancel")
+      .setStyle(ButtonStyle.Danger)
+
+    const conditionRow =
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        conditionSelect
+      )
+    const isFoilRow =
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        isFoilSelect
+      )
+    const sellerVerifiedRow =
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        sellerVerifiedSelect
+      )
+    const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      submitButton,
+      cancelButton
+    )
+
+    const replyMessage = await interaction.reply({
+      content: `Update selectable fields for **${truncatedName}**:`,
+      components: [conditionRow, isFoilRow, sellerVerifiedRow, buttonRow],
+      ephemeral: true,
+      fetchReply: true, // Required to get the message object
+    })
+
+    // Store the initial state of the selectable fields in the client's messageStates map
+    client.messageStates.set(replyMessage.id, {
+      itemId: existingItem.id,
+      condition: existingItem.condition,
+      isFoil: existingItem.isFoil,
+      sellerVerified: existingItem.sellerVerified,
+    })
   } catch (error) {
-    console.error("Error preparing selectable update modal:", error)
+    console.error(
+      "Error preparing selectable update message components:",
+      error
+    )
     await interaction.reply({
       content:
-        "Failed to prepare selectable update modal due to a database error.",
+        "Failed to prepare selectable update options due to an internal error.",
       ephemeral: true,
     })
   } finally {
@@ -804,12 +880,24 @@ async function handleFreeFormModalSubmit(interaction: any) {
   }
 }
 
-async function handleSelectableModalSubmit(interaction: any) {
-  await interaction.deferReply({ ephemeral: true })
+async function handleSubmitSelectableUpdate(interaction: any) {
+  await interaction.deferUpdate() // Defer the button interaction
 
-  const itemId = interaction.customId.split("_")[3] // Extract ID from customId: 'update_selectable_modal_ITEM_ID'
+  const itemId = interaction.customId.split("_")[3] // Extract ID from customId: 'submit_selectable_update_ITEM_ID'
   const discordUserId = interaction.user.id
   const isServerOwner = interaction.guild.ownerId === discordUserId
+  const messageId = interaction.message.id
+
+  const finalItemState = client.messageStates.get(messageId)
+
+  if (!finalItemState) {
+    await interaction.followUp({
+      content:
+        "Error: Could not find state for this message. Please try again.",
+      ephemeral: true,
+    })
+    return
+  }
 
   try {
     const existingItem = await prisma.monitoredItem.findUnique({
@@ -818,16 +906,22 @@ async function handleSelectableModalSubmit(interaction: any) {
     })
 
     if (!existingItem) {
-      await interaction.editReply(
-        "Item not found with the provided ID. It might have been deleted already."
-      )
+      await interaction.followUp({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+      client.messageStates.delete(messageId) // Clean up state
       return
     }
 
     if (!isServerOwner && existingItem.discordUserId !== discordUserId) {
-      await interaction.editReply(
-        "You do not have permission to update this item."
-      )
+      await interaction.followUp({
+        content:
+          "You do not have permission to update this item. Only the server owner or the item's owner can update it.",
+        ephemeral: true,
+      })
+      client.messageStates.delete(messageId) // Clean up state
       return
     }
 
@@ -839,12 +933,11 @@ async function handleSelectableModalSubmit(interaction: any) {
         | "ModeratelyPlayed"
         | "HeavilyPlayed"
       isFoil?: boolean
+      sellerVerified?: boolean
     } = {}
 
     let changesMade = false
-    let errorMessage = ""
 
-    const newCondition = interaction.fields.getTextInputValue("conditionInput")
     const validConditions = [
       "Unopened",
       "NearMint",
@@ -852,51 +945,44 @@ async function handleSelectableModalSubmit(interaction: any) {
       "ModeratelyPlayed",
       "HeavilyPlayed",
     ]
-    if (newCondition !== undefined && newCondition !== "") {
-      const normalizedNewCondition = newCondition.replace(/\s/g, "")
-      if (
-        normalizedNewCondition !== existingItem.condition &&
-        validConditions.includes(normalizedNewCondition)
-      ) {
-        updateData.condition = normalizedNewCondition as
-          | "Unopened"
-          | "NearMint"
-          | "LightlyPlayed"
-          | "ModeratelyPlayed"
-          | "HeavilyPlayed"
-        changesMade = true
-      } else if (!validConditions.includes(normalizedNewCondition)) {
-        errorMessage +=
-          "Invalid condition provided. Must be 'Unopened', 'Near Mint', 'Lightly Played', 'Moderately Played', or 'Heavily Played'. "
-      }
+
+    if (
+      finalItemState.condition !== undefined &&
+      finalItemState.condition !== existingItem.condition &&
+      validConditions.includes(finalItemState.condition)
+    ) {
+      updateData.condition = finalItemState.condition as
+        | "Unopened"
+        | "NearMint"
+        | "LightlyPlayed"
+        | "ModeratelyPlayed"
+        | "HeavilyPlayed"
+      changesMade = true
     }
 
-    const newIsFoilString = interaction.fields.getTextInputValue("isFoilInput")
-    if (newIsFoilString !== undefined && newIsFoilString !== "") {
-      let newIsFoil: boolean | undefined
-      if (newIsFoilString.toLowerCase() === "true") {
-        newIsFoil = true
-      } else if (newIsFoilString.toLowerCase() === "false") {
-        newIsFoil = false
-      } else {
-        errorMessage += "'Is Foil?' must be 'true' or 'false'. "
-      }
-
-      if (newIsFoil !== undefined && newIsFoil !== existingItem.isFoil) {
-        updateData.isFoil = newIsFoil
-        changesMade = true
-      }
+    if (
+      finalItemState.isFoil !== undefined &&
+      finalItemState.isFoil !== existingItem.isFoil
+    ) {
+      updateData.isFoil = finalItemState.isFoil
+      changesMade = true
     }
 
-    if (errorMessage) {
-      await interaction.editReply(`Failed to update item: ${errorMessage}`)
-      return
+    if (
+      finalItemState.sellerVerified !== undefined &&
+      finalItemState.sellerVerified !== existingItem.sellerVerified
+    ) {
+      updateData.sellerVerified = finalItemState.sellerVerified
+      changesMade = true
     }
 
     if (!changesMade) {
-      await interaction.editReply(
-        "No changes detected or invalid input. Item was not updated."
-      )
+      await interaction.followUp({
+        content: "No changes detected. Item was not updated.",
+        ephemeral: true,
+      })
+      await interaction.message.delete() // Delete the original message with components
+      client.messageStates.delete(messageId) // Clean up state
       return
     }
 
@@ -905,17 +991,33 @@ async function handleSelectableModalSubmit(interaction: any) {
       data: updateData,
     })
 
-    await interaction.editReply(
-      `Successfully updated item "${updatedItem.name}" (ID: \`${updatedItem.id}\`).`
-    )
+    await interaction.followUp({
+      content: `Successfully updated item "${updatedItem.name}" (ID: \`${updatedItem.id}\`).`,
+      ephemeral: true,
+    })
+    // Removed interaction.message.delete() as per user feedback
+    client.messageStates.delete(messageId) // Clean up state
   } catch (error: any) {
-    console.error("Error updating selectable item via modal:", error)
-    await interaction.editReply(
-      "Failed to update item due to a database error. Please check the console for details."
-    )
+    console.error("Error updating selectable item via components:", error)
+    await interaction.followUp({
+      content:
+        "Failed to update item due to an internal error. Please check the console for details.", // Changed message to be more generic
+      ephemeral: true,
+    })
+    client.messageStates.delete(messageId) // Clean up state on error
   } finally {
     await prisma.$disconnect()
   }
+}
+
+async function handleCancelSelectableUpdate(interaction: any) {
+  await interaction.deferUpdate() // Defer the button interaction
+  await interaction.followUp({
+    content: "Update cancelled.",
+    ephemeral: true,
+  })
+  // Removed interaction.message.delete() as per user feedback
+  client.messageStates.delete(interaction.message.id) // Clean up state
 }
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -952,23 +1054,150 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.customId === "delete_item_select") {
       await handleDeleteItemSelect(interaction)
     } else if (interaction.customId === "update_item_select") {
-      // Handle update select menu
+      // This is the initial select menu for choosing an item to update
       await handleUpdateItemSelect(interaction)
+    } else if (interaction.customId.startsWith("update_condition_select_")) {
+      await handleSelectMenuUpdate(interaction)
+    } else if (interaction.customId.startsWith("update_is_foil_select_")) {
+      await handleSelectMenuUpdate(interaction)
+    } else if (
+      interaction.customId.startsWith("update_seller_verified_select_")
+    ) {
+      await handleSelectMenuUpdate(interaction)
     }
   } else if (interaction.isButton()) {
     if (interaction.customId.startsWith("update_free_form_")) {
       await handleUpdateFreeFormFields(interaction)
     } else if (interaction.customId.startsWith("update_selectable_")) {
       await handleUpdateSelectableFields(interaction)
+    } else if (interaction.customId.startsWith("submit_selectable_update_")) {
+      await handleSubmitSelectableUpdate(interaction)
+    } else if (interaction.customId.startsWith("cancel_selectable_update_")) {
+      await handleCancelSelectableUpdate(interaction)
     }
   } else if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith("update_free_form_modal_")) {
       await handleFreeFormModalSubmit(interaction)
-    } else if (interaction.customId.startsWith("update_selectable_modal_")) {
-      await handleSelectableModalSubmit(interaction)
     }
+    // Removed handleSelectableModalSubmit as it's no longer used
   }
 })
+
+async function handleSelectMenuUpdate(interaction: any) {
+  await interaction.deferUpdate() // Defer the select menu interaction
+
+  const selectedCustomId = interaction.customId // The customId of the select menu that was interacted with
+  const selectedValue = interaction.values[0] // The newly selected value
+  const messageId = interaction.message.id
+
+  const currentItemState = client.messageStates.get(messageId)
+
+  if (!currentItemState) {
+    await interaction.followUp({
+      content:
+        "Error: Could not find state for this message. Please try again.",
+      ephemeral: true,
+    })
+    return
+  }
+
+  // Update the state based on the interacted select menu
+  if (selectedCustomId.startsWith("update_condition_select_")) {
+    currentItemState.condition = selectedValue
+  } else if (selectedCustomId.startsWith("update_is_foil_select_")) {
+    currentItemState.isFoil = selectedValue === "true"
+  } else if (selectedCustomId.startsWith("update_seller_verified_select_")) {
+    currentItemState.sellerVerified = selectedValue === "true"
+  }
+
+  // Update the state in the map
+  client.messageStates.set(messageId, currentItemState)
+
+  // Reconstruct all select menus with updated default values based on currentItemState
+  const conditionSelect = new StringSelectMenuBuilder()
+    .setCustomId(`update_condition_select_${currentItemState.itemId}`)
+    .setPlaceholder("Select Item Condition")
+    .addOptions(
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Unopened")
+        .setValue("Unopened")
+        .setDefault(currentItemState.condition === "Unopened"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Near Mint")
+        .setValue("NearMint")
+        .setDefault(currentItemState.condition === "NearMint"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Lightly Played")
+        .setValue("LightlyPlayed")
+        .setDefault(currentItemState.condition === "LightlyPlayed"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Moderately Played")
+        .setValue("ModeratelyPlayed")
+        .setDefault(currentItemState.condition === "ModeratelyPlayed"),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Heavily Played")
+        .setValue("HeavilyPlayed")
+        .setDefault(currentItemState.condition === "HeavilyPlayed")
+    )
+
+  const isFoilSelect = new StringSelectMenuBuilder()
+    .setCustomId(`update_is_foil_select_${currentItemState.itemId}`)
+    .setPlaceholder("Is the item foil?")
+    .addOptions(
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Yes (Foil)")
+        .setValue("true")
+        .setDefault(currentItemState.isFoil === true),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("No (Non-Foil)")
+        .setValue("false")
+        .setDefault(currentItemState.isFoil === false)
+    )
+
+  const sellerVerifiedSelect = new StringSelectMenuBuilder()
+    .setCustomId(`update_seller_verified_select_${currentItemState.itemId}`)
+    .setPlaceholder("Require verified sellers?")
+    .addOptions(
+      new StringSelectMenuOptionBuilder()
+        .setLabel("Yes (Verified Sellers Only)")
+        .setValue("true")
+        .setDefault(currentItemState.sellerVerified === true),
+      new StringSelectMenuOptionBuilder()
+        .setLabel("No (Any Seller)")
+        .setValue("false")
+        .setDefault(currentItemState.sellerVerified === false)
+    )
+
+  const submitButton = new ButtonBuilder()
+    .setCustomId(`submit_selectable_update_${currentItemState.itemId}`)
+    .setLabel("Submit Changes")
+    .setStyle(ButtonStyle.Success)
+
+  const cancelButton = new ButtonBuilder()
+    .setCustomId(`cancel_selectable_update_${currentItemState.itemId}`)
+    .setLabel("Cancel")
+    .setStyle(ButtonStyle.Danger)
+
+  const conditionRow =
+    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      conditionSelect
+    )
+  const isFoilRow =
+    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(isFoilSelect)
+  const sellerVerifiedRow =
+    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      sellerVerifiedSelect
+    )
+  const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    submitButton,
+    cancelButton
+  )
+
+  await interaction.editReply({
+    content: interaction.message.content, // Keep the original content
+    components: [conditionRow, isFoilRow, sellerVerifiedRow, buttonRow],
+  })
+}
 
 console.log("Logging in to Discord...")
 client.login(config.DISCORD_TOKEN)
