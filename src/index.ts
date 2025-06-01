@@ -91,7 +91,11 @@ async function fetchItemDetails(
 }> {
   let browser
   try {
-    browser = await puppeteer.launch({ headless: false, devtools: true }) // Launch with devtools enabled
+    browser = await puppeteer.launch({
+      headless: false,
+      devtools: false,
+      args: ["--window-position=0,1920"],
+    }) // Launch with devtools enabled
     const page = await browser.newPage()
 
     // Set the cookie for TCGPlayer
