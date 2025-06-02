@@ -19,15 +19,14 @@ import {
 } from "discord.js"
 import { CustomClient } from "./CustomClient" // Import CustomClient
 import puppeteer from "puppeteer" // Import puppeteer and Protocol
-import { PrismaClient } from "@prisma/client" // Import PrismaClient
 import path from "path"
 import fs from "fs"
-import { all } from "axios"
+import axios from "axios" // Corrected import for axios
 import express from "express" // Import express
 import cors from "cors" // Import cors
+import { Server } from "socket.io" // Import Server from socket.io
 import priceHistoryRouter from "./api/price-history" // Import the price history router
-
-const prisma = new PrismaClient() // Instantiate PrismaClient
+import monitoredItemsRouter from "./api/monitored-items" // Import the monitored items router
 
 // Initialize Express app
 const app = express()
@@ -36,11 +35,28 @@ app.use(express.json()) // Enable JSON body parsing
 
 // Mount API routers
 app.use("/api", priceHistoryRouter)
+app.use("/api", monitoredItemsRouter)
 
 // Start the API server
-app.listen(config.API_PORT, () => {
+const server = app.listen(config.API_PORT, () => {
   console.log(`API server listening on port ${config.API_PORT}`)
 })
+
+// Setup Socket.IO server
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow all origins for now, refine later if needed
+    methods: ["GET", "POST"],
+  },
+})
+
+io.on("connection", (socket) => {
+  console.log("Socket.IO client connected")
+  socket.on("disconnect", () => console.log("Socket.IO client disconnected"))
+})
+
+// Export io so it can be used by other modules (e.g., API routes)
+export { io }
 
 const client = new CustomClient({
   // Use CustomClient
@@ -388,10 +404,11 @@ async function fetchItemDetails(
 }
 
 async function checkPriceAndNotify() {
-  // Fetch all items to monitor from the database (threshold is now a required field)
-  const itemsToMonitor = await prisma.monitoredItem.findMany({
-    include: { url: true }, // Include the related Url data
-  })
+  // Fetch all items to monitor from the API
+  const itemsToMonitorResponse = await axios.get(
+    `http://localhost:${config.API_PORT}/api/monitored-items`
+  )
+  const itemsToMonitor = itemsToMonitorResponse.data
 
   if (itemsToMonitor.length === 0) {
     console.warn(
@@ -426,23 +443,36 @@ async function checkPriceAndNotify() {
       continue // Move to the next item
     }
 
-    // If the URL record doesn't have an image yet, and we scraped one, store it
+    // If the URL record doesn't have an image yet, and we scraped one, store it via API
     if (!item.url.imageUrl && scrapedImageUrl) {
-      await prisma.url.update({
-        where: { id: item.url.id },
-        data: { imageUrl: scrapedImageUrl },
-      })
+      await axios.put(
+        `http://localhost:${config.API_PORT}/api/urls/${item.url.id}/image-url`,
+        { imageUrl: scrapedImageUrl }
+      )
       console.log(
         `[${timestamp}] Stored image URL for ${item.name}: ${scrapedImageUrl}`
       )
     }
 
-    // Fetch the last recorded price for this URL
-    const lastPriceRecord = await prisma.priceHistory.findFirst({
-      where: { urlId: item.urlId },
-      orderBy: { timestamp: "desc" },
-    })
-    const lastRecordedPrice = lastPriceRecord ? lastPriceRecord.price : null
+    // Fetch the last recorded price for this URL via API
+    let lastRecordedPrice: number | null = null
+    try {
+      const lastPriceResponse = await axios.get(
+        `http://localhost:${config.API_PORT}/api/price-history/latest/${item.urlId}`
+      )
+      lastRecordedPrice = lastPriceResponse.data.price
+    } catch (error: any) {
+      if (error.response && error.response.status === 404) {
+        console.log(
+          `[${timestamp}] No previous price history found for ${item.name}.`
+        )
+      } else {
+        console.error(
+          `[${timestamp}] Error fetching last price for ${item.name}:`,
+          error.message
+        )
+      }
+    }
 
     console.log(
       `[${timestamp}] Current Total Price for ${item.name}: $${currentTotalPrice}`
@@ -453,14 +483,15 @@ async function checkPriceAndNotify() {
       )
     }
 
-    // Add entry to PriceHistory only if price has changed or it's the first entry
+    // Add entry to PriceHistory only if price has changed or it's the first entry via API
     if (lastRecordedPrice === null || currentTotalPrice !== lastRecordedPrice) {
-      await prisma.priceHistory.create({
-        data: {
+      await axios.post(
+        `http://localhost:${config.API_PORT}/api/price-history`,
+        {
           urlId: item.urlId,
           price: currentTotalPrice, // Store total price in history
-        },
-      })
+        }
+      )
       console.log(
         `[${timestamp}] Price change detected for ${item.name}. New price history entry added.`
       )
@@ -478,11 +509,11 @@ async function checkPriceAndNotify() {
         config.CHANNEL_ID
       )) as TextChannel
       if (channel) {
-        // Find all users monitoring this specific URL
-        const usersToNotify = await prisma.monitoredItem.findMany({
-          where: { urlId: item.urlId },
-          select: { discordUserId: true },
-        })
+        // Find all users monitoring this specific URL via API
+        const usersToNotifyResponse = await axios.get(
+          `http://localhost:${config.API_PORT}/api/monitored-items/users-to-notify/${item.urlId}`
+        )
+        const usersToNotify = usersToNotifyResponse.data
 
         const uniqueUserIds = [
           ...new Set(
@@ -526,9 +557,10 @@ async function handleDeleteItemSelect(interaction: any) {
   const isServerOwner = interaction.guild.ownerId === discordUserId
 
   try {
-    const existingItem = await prisma.monitoredItem.findUnique({
-      where: { id: itemId },
-    })
+    const existingItemResponse = await axios.get(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+    )
+    const existingItem = existingItemResponse.data
 
     if (!existingItem) {
       await interaction.followUp({
@@ -549,23 +581,29 @@ async function handleDeleteItemSelect(interaction: any) {
       return
     }
 
-    await prisma.monitoredItem.delete({
-      where: { id: itemId },
-    })
+    await axios.delete(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+    )
 
     await interaction.followUp({
       content: `Successfully deleted item "${existingItem.name}" (ID: \`${existingItem.id}\`).`,
       ephemeral: true,
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error deleting item via select menu:", error)
-    await interaction.followUp({
-      content:
-        "Failed to delete item due to a database error. Please check the console for details.",
-      ephemeral: true,
-    })
-  } finally {
-    await prisma.$disconnect()
+    if (error.response && error.response.status === 404) {
+      await interaction.followUp({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+    } else {
+      await interaction.followUp({
+        content:
+          "Failed to delete item due to a database error. Please check the console for details.",
+        ephemeral: true,
+      })
+    }
   }
 }
 
@@ -577,10 +615,10 @@ async function handleUpdateItemSelect(interaction: any) {
   const isServerOwner = interaction.guild.ownerId === discordUserId
 
   try {
-    const existingItem = await prisma.monitoredItem.findUnique({
-      where: { id: itemId },
-      include: { url: true }, // Include the related Url data
-    })
+    const existingItemResponse = await axios.get(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+    )
+    const existingItem = existingItemResponse.data
 
     if (!existingItem) {
       await interaction.followUp({
@@ -621,14 +659,20 @@ async function handleUpdateItemSelect(interaction: any) {
       components: [actionRow],
       ephemeral: true,
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error preparing update options:", error)
-    await interaction.followUp({
-      content: "Failed to prepare update options due to a database error.",
-      ephemeral: true,
-    })
-  } finally {
-    await prisma.$disconnect()
+    if (error.response && error.response.status === 404) {
+      await interaction.followUp({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+    } else {
+      await interaction.followUp({
+        content: "Failed to prepare update options due to a database error.",
+        ephemeral: true,
+      })
+    }
   }
 }
 
@@ -638,10 +682,10 @@ async function handleUpdateFreeFormFields(interaction: any) {
   const isServerOwner = interaction.guild.ownerId === discordUserId
 
   try {
-    const existingItem = await prisma.monitoredItem.findUnique({
-      where: { id: itemId },
-      include: { url: true },
-    })
+    const existingItemResponse = await axios.get(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+    )
+    const existingItem = existingItemResponse.data
 
     if (!existingItem) {
       await interaction.reply({
@@ -701,15 +745,21 @@ async function handleUpdateFreeFormFields(interaction: any) {
     modal.addComponents(firstActionRow, secondActionRow, thirdActionRow)
 
     await interaction.showModal(modal)
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error preparing free form update modal:", error)
-    await interaction.reply({
-      content:
-        "Failed to prepare free form update modal due to a database error.",
-      ephemeral: true,
-    })
-  } finally {
-    await prisma.$disconnect()
+    if (error.response && error.response.status === 404) {
+      await interaction.reply({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+    } else {
+      await interaction.reply({
+        content:
+          "Failed to prepare free form update modal due to a database error.",
+        ephemeral: true,
+      })
+    }
   }
 }
 
@@ -719,10 +769,10 @@ async function handleUpdateSelectableFields(interaction: any) {
   const isServerOwner = interaction.guild.ownerId === discordUserId
 
   try {
-    const existingItem = await prisma.monitoredItem.findUnique({
-      where: { id: itemId },
-      include: { url: true },
-    })
+    const existingItemResponse = await axios.get(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+    )
+    const existingItem = existingItemResponse.data
 
     if (!existingItem) {
       await interaction.reply({
@@ -846,18 +896,24 @@ async function handleUpdateSelectableFields(interaction: any) {
       isFoil: existingItem.isFoil,
       sellerVerified: existingItem.sellerVerified,
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error(
       "Error preparing selectable update message components:",
       error
     )
-    await interaction.reply({
-      content:
-        "Failed to prepare selectable update options due to an internal error.",
-      ephemeral: true,
-    })
-  } finally {
-    await prisma.$disconnect()
+    if (error.response && error.response.status === 404) {
+      await interaction.reply({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+    } else {
+      await interaction.reply({
+        content:
+          "Failed to prepare selectable update options due to an internal error.",
+        ephemeral: true,
+      })
+    }
   }
 }
 
@@ -869,10 +925,10 @@ async function handleFreeFormModalSubmit(interaction: any) {
   const isServerOwner = interaction.guild.ownerId === discordUserId
 
   try {
-    const existingItem = await prisma.monitoredItem.findUnique({
-      where: { id: itemId },
-      include: { url: true },
-    })
+    const existingItemResponse = await axios.get(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+    )
+    const existingItem = existingItemResponse.data
 
     if (!existingItem) {
       await interaction.editReply(
@@ -913,14 +969,25 @@ async function handleFreeFormModalSubmit(interaction: any) {
       newUrl !== existingItem.url.url &&
       newUrl !== ""
     ) {
-      let urlRecord = await prisma.url.findUnique({
-        where: { url: newUrl },
-      })
-
-      if (!urlRecord) {
-        urlRecord = await prisma.url.create({
-          data: { url: newUrl },
-        })
+      let urlRecord = null
+      try {
+        const urlRecordResponse = await axios.get(
+          `http://localhost:${
+            config.API_PORT
+          }/api/urls/by-string?url=${encodeURIComponent(newUrl)}`
+        )
+        urlRecord = urlRecordResponse.data
+      } catch (error: any) {
+        if (error.response && error.response.status === 404) {
+          // URL not found, create it
+          const newUrlResponse = await axios.post(
+            `http://localhost:${config.API_PORT}/api/urls`,
+            { url: newUrl }
+          )
+          urlRecord = newUrlResponse.data
+        } else {
+          throw error // Re-throw other errors
+        }
       }
       updateData.urlId = urlRecord.id
       changesMade = true
@@ -950,16 +1017,21 @@ async function handleFreeFormModalSubmit(interaction: any) {
       return
     }
 
-    const updatedItem = await prisma.monitoredItem.update({
-      where: { id: itemId },
-      data: updateData,
-    })
+    const updatedItemResponse = await axios.put(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`,
+      updateData
+    )
+    const updatedItem = updatedItemResponse.data
 
     await interaction.editReply(
       `Successfully updated item "${updatedItem.name}" (ID: \`${updatedItem.id}\`).`
     )
   } catch (error: any) {
-    if (error.code === "P2002" && error.meta?.target?.includes("url")) {
+    if (error.response && error.response.status === 404) {
+      await interaction.editReply(
+        "Item not found with the provided ID. It might have been deleted already."
+      )
+    } else if (error.code === "P2002" && error.meta?.target?.includes("url")) {
       await interaction.editReply(
         "Failed to update item: The provided URL is already associated with another item."
       )
@@ -969,8 +1041,6 @@ async function handleFreeFormModalSubmit(interaction: any) {
         "Failed to update item due to a database error. Please check the console for details."
       )
     }
-  } finally {
-    await prisma.$disconnect()
   }
 }
 
@@ -994,10 +1064,10 @@ async function handleSubmitSelectableUpdate(interaction: any) {
   }
 
   try {
-    const existingItem = await prisma.monitoredItem.findUnique({
-      where: { id: itemId },
-      include: { url: true },
-    })
+    const existingItemResponse = await axios.get(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+    )
+    const existingItem = existingItemResponse.data
 
     if (!existingItem) {
       await interaction.followUp({
@@ -1080,10 +1150,11 @@ async function handleSubmitSelectableUpdate(interaction: any) {
       return
     }
 
-    const updatedItem = await prisma.monitoredItem.update({
-      where: { id: itemId },
-      data: updateData,
-    })
+    const updatedItemResponse = await axios.put(
+      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`,
+      updateData
+    )
+    const updatedItem = updatedItemResponse.data
 
     await interaction.followUp({
       content: `Successfully updated item "${updatedItem.name}" (ID: \`${updatedItem.id}\`).`,
@@ -1093,14 +1164,20 @@ async function handleSubmitSelectableUpdate(interaction: any) {
     client.messageStates.delete(messageId) // Clean up state
   } catch (error: any) {
     console.error("Error updating selectable item via components:", error)
-    await interaction.followUp({
-      content:
-        "Failed to update item due to an internal error. Please check the console for details.", // Changed message to be more generic
-      ephemeral: true,
-    })
+    if (error.response && error.response.status === 404) {
+      await interaction.followUp({
+        content:
+          "Item not found with the provided ID. It might have been deleted already.",
+        ephemeral: true,
+      })
+    } else {
+      await interaction.followUp({
+        content:
+          "Failed to update item due to an internal error. Please check the console for details.", // Changed message to be more generic
+        ephemeral: true,
+      })
+    }
     client.messageStates.delete(messageId) // Clean up state on error
-  } finally {
-    await prisma.$disconnect()
   }
 }
 

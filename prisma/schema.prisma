@@ -14,6 +14,7 @@ model Url {
   id            String          @id @default(uuid())
   url           String          @unique
   imageUrl      String?         // New field for image URL
+  hasPriceChanged Boolean @default(false) // New field to indicate price change
   monitoredItems MonitoredItem[]
   priceHistory  PriceHistory[]
 
@@ -28,6 +29,7 @@ model MonitoredItem {
   threshold     Float
   discordUserId String    // Made required
   discordUserName String? // New field for Discord user's name, now optional
+  sellerVerified Boolean @default(false) // Re-added field
   urlId         String
   url           Url       @relation(fields: [urlId], references: [id])
 

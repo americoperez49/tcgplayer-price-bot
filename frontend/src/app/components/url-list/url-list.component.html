@@ -9,6 +9,7 @@
     <div
       *ngFor="let urlItem of urls"
       class="url-card"
+      [ngClass]="{ 'price-changed': urlItem.hasPriceChanged }"
       (click)="viewPriceHistory(urlItem.url)"
     >
       <img
@@ -26,6 +27,9 @@
         <p *ngIf="urlItem.latestPrice === null" class="latest-price no-price">
           Latest Price: N/A
         </p>
+        <div *ngIf="urlItem.hasPriceChanged" class="price-change-indicator">
+          <span>New Price!</span>
+        </div>
       </div>
     </div>
   </div>

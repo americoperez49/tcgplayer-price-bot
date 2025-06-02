@@ -4,6 +4,7 @@ import { ActivatedRoute } from '@angular/router'; // Import ActivatedRoute
 import {
   PriceHistoryService,
   PriceHistoryEntry,
+  MonitoredUrl, // Keep MonitoredUrl for type hinting in fetchMonitoredUrlDetails
 } from '../../services/price-history.service'; // Updated path
 import {
   ChartComponent,
@@ -17,6 +18,7 @@ import {
   ApexYAxis,
   NgApexchartsModule,
 } from 'ng-apexcharts';
+import { Subscription } from 'rxjs'; // Keep Subscription for ngOnDestroy if needed later, but remove priceUpdateSubscription
 
 export type ChartOptions = {
   series: ApexAxisChartSeries;
@@ -37,6 +39,7 @@ export type ChartOptions = {
   styleUrl: './price-history.component.scss',
 })
 export class PriceHistoryComponent implements OnInit {
+  // Removed OnDestroy for now
   @ViewChild('chart') chart!: ChartComponent;
   public chartOptions: Partial<ChartOptions>;
 
@@ -45,6 +48,7 @@ export class PriceHistoryComponent implements OnInit {
   priceHistory: PriceHistoryEntry[] = [];
   discordUserNames: string[] = []; // To store the list of Discord usernames
   errorMessage: string | null = null;
+  private currentUrlId: string | null = null; // To store the ID of the current URL
 
   constructor(
     private priceHistoryService: PriceHistoryService,
@@ -137,11 +141,29 @@ export class PriceHistoryComponent implements OnInit {
         if (monitoredUrl) {
           this.imageUrl = monitoredUrl.imageUrl;
           this.discordUserNames = monitoredUrl.discordUserNames;
+          this.currentUrlId = monitoredUrl.id; // Store the URL ID
+          // Acknowledge price change when navigating to the item's price history
+          if (monitoredUrl.hasPriceChanged && this.currentUrlId) {
+            this.acknowledgePriceChange(this.currentUrlId);
+          }
         }
       },
       error: (err) => {
         console.error('Error fetching monitored URL details:', err);
         // Optionally set an error message or handle it
+      },
+    });
+  }
+
+  acknowledgePriceChange(urlId: string): void {
+    this.priceHistoryService.acknowledgePriceChange(urlId).subscribe({
+      next: () => {
+        console.log(`Price change acknowledged for URL ID: ${urlId}`);
+        // No need to update local monitoredUrls array here, as it's not displayed
+      },
+      error: (err) => {
+        console.error('Error acknowledging price change:', err);
+        // Handle error
       },
     });
   }

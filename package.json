@@ -4,7 +4,6 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "start": "node dist/index.js",
     "deploy-commands": "tsc --project tsconfig.json && node dist/deploy-commands.js"
@@ -24,7 +23,8 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "prisma": "^6.8.2",
-    "puppeteer": "^24.9.0"
+    "puppeteer": "^24.9.0",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",
