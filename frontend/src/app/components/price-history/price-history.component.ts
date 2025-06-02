@@ -65,7 +65,7 @@ export class PriceHistoryComponent implements OnInit {
         height: 350,
         type: 'line',
         zoom: {
-          enabled: false,
+          enabled: true,
         },
       },
       dataLabels: {
@@ -85,8 +85,9 @@ export class PriceHistoryComponent implements OnInit {
             year: 'yyyy',
             month: "MMM 'yy",
             day: 'dd MMM',
-            hour: 'HH:mm',
+            hour: 'hh:mm TT', // Change to 12-hour format with AM/PM
           },
+          datetimeUTC: false, // Display datetime in local timezone
         },
         title: {
           text: 'Date',
@@ -107,7 +108,7 @@ export class PriceHistoryComponent implements OnInit {
       },
       tooltip: {
         x: {
-          format: 'dd MMM yyyy HH:mm',
+          format: 'dd MMM yyyy hh:mm TT', // Change to 12-hour format with AM/PM
         },
         y: {
           formatter: function (value) {
