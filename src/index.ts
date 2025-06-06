@@ -179,9 +179,9 @@ async function fetchItemDetails(
       ) => {
         let basePrice: number | null = null
         if (priceText) {
-          const match = priceText.match(/\$([0-9]+\.?[0-9]*)/)
+          const match = priceText.match(/\$([0-9,]+\.?[0-9]*)/)
           if (match && match[1]) {
-            basePrice = parseFloat(match[1])
+            basePrice = parseFloat(match[1].replace(/,/g, ""))
           }
         }
 
