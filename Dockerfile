@@ -71,5 +71,14 @@ RUN npm run build
 # Expose the port the API server runs on
 EXPOSE 3001
 
-# Command to run the application with Xvfb for non-headless Puppeteer
-CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x720x24 & export DISPLAY=:99 && npm start"]
+# Copy the entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# Make the entrypoint script executable
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Set the entrypoint for the container
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+# Command to run the application (passed as arguments to ENTRYPOINT)
+CMD ["npm", "start"]

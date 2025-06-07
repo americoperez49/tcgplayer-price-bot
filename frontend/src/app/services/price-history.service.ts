@@ -24,7 +24,7 @@ export interface MonitoredUrl {
   providedIn: 'root',
 })
 export class PriceHistoryService {
-  private baseUrl = 'http://localhost:3001/api'; // Base URL for the API
+  private baseUrl = 'https://tcg-player-bot-357901268879.us-south1.run.app/api'; // Base URL for the API
   private priceUpdateSubject = new Subject<MonitoredUrl>(); // Subject to emit price updates
 
   constructor(private http: HttpClient, private socketService: SocketService) {

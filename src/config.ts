@@ -6,5 +6,5 @@ export const config = {
     process.env.POLLING_INTERVAL_MS || (60 * 60 * 1000).toString(),
     10
   ), // Default to 1 hour if not set
-  API_PORT: parseInt(process.env.API_PORT || "3001", 10), // Default to 3001
+  API_PORT: parseInt(process.env.API_PORT || "8080", 10), // Default to 8080 for Cloud Run
 }

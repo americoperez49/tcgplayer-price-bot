@@ -14,7 +14,10 @@ import {
 
 import { routes } from './app.routes';
 
-const config: SocketIoConfig = { url: 'http://localhost:3001', options: {} }; // Define Socket.IO config
+const config: SocketIoConfig = {
+  url: 'https://tcg-player-bot-357901268879.us-south1.run.app',
+  options: {},
+}; // Define Socket.IO config
 
 export const appConfig: ApplicationConfig = {
   providers: [

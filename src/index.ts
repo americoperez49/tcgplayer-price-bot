@@ -30,7 +30,12 @@ import monitoredItemsRouter from "./api/monitored-items" // Import the monitored
 
 // Initialize Express app
 const app = express()
-app.use(cors()) // Enable CORS for all routes
+app.use(
+  cors({
+    origin: "http://localhost:4200", // Allow requests from your Angular frontend
+    credentials: true, // Allow cookies to be sent
+  })
+) // Enable CORS for specific origin
 app.use(express.json()) // Enable JSON body parsing
 
 // Mount API routers
@@ -108,10 +113,9 @@ async function fetchItemDetails(
   let browser
   try {
     browser = await puppeteer.launch({
-      headless: false,
-      devtools: false,
-      args: ["--window-position=0,1920", "--no-sandbox"],
-    }) // Launch with devtools enabled
+      headless: false, // Use headless mode for server environments
+      args: ["--no-sandbox", "--disable-setuid-sandbox"], // Recommended args for Docker
+    })
     const page = await browser.newPage()
 
     // Set the cookie for TCGPlayer
@@ -406,7 +410,7 @@ async function fetchItemDetails(
 async function checkPriceAndNotify() {
   // Fetch all items to monitor from the API
   const itemsToMonitorResponse = await axios.get(
-    `http://localhost:${config.API_PORT}/api/monitored-items`
+    `http://localhost:8080/api/monitored-items`
   )
   const itemsToMonitor = itemsToMonitorResponse.data
 
@@ -446,7 +450,7 @@ async function checkPriceAndNotify() {
     // If the URL record doesn't have an image yet, and we scraped one, store it via API
     if (!item.url.imageUrl && scrapedImageUrl) {
       await axios.put(
-        `http://localhost:${config.API_PORT}/api/urls/${item.url.id}/image-url`,
+        `http://localhost:8080/api/urls/${item.url.id}/image-url`,
         { imageUrl: scrapedImageUrl }
       )
       console.log(
@@ -458,7 +462,7 @@ async function checkPriceAndNotify() {
     let lastRecordedPrice: number | null = null
     try {
       const lastPriceResponse = await axios.get(
-        `http://localhost:${config.API_PORT}/api/price-history/latest/${item.urlId}`
+        `http://localhost:8080/api/price-history/latest/${item.urlId}`
       )
       lastRecordedPrice = lastPriceResponse.data.price
     } catch (error: any) {
@@ -485,13 +489,10 @@ async function checkPriceAndNotify() {
 
     // Add entry to PriceHistory only if price has changed or it's the first entry via API
     if (lastRecordedPrice === null || currentTotalPrice !== lastRecordedPrice) {
-      await axios.post(
-        `http://localhost:${config.API_PORT}/api/price-history`,
-        {
-          urlId: item.urlId,
-          price: currentTotalPrice, // Store total price in history
-        }
-      )
+      await axios.post(`http://localhost:8080/api/price-history`, {
+        urlId: item.urlId,
+        price: currentTotalPrice, // Store total price in history
+      })
       console.log(
         `[${timestamp}] Price change detected for ${item.name}. New price history entry added.`
       )
@@ -511,7 +512,7 @@ async function checkPriceAndNotify() {
       if (channel) {
         // Find all users monitoring this specific URL via API
         const usersToNotifyResponse = await axios.get(
-          `http://localhost:${config.API_PORT}/api/monitored-items/users-to-notify/${item.urlId}`
+          `http://localhost:8080/api/monitored-items/users-to-notify/${item.urlId}`
         )
         const usersToNotify = usersToNotifyResponse.data
 
@@ -558,7 +559,7 @@ async function handleDeleteItemSelect(interaction: any) {
 
   try {
     const existingItemResponse = await axios.get(
-      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+      `http://localhost:8080/api/monitored-items/${itemId}`
     )
     const existingItem = existingItemResponse.data
 
@@ -581,9 +582,7 @@ async function handleDeleteItemSelect(interaction: any) {
       return
     }
 
-    await axios.delete(
-      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
-    )
+    await axios.delete(`http://localhost:8080/api/monitored-items/${itemId}`)
 
     await interaction.followUp({
       content: `Successfully deleted item "${existingItem.name}" (ID: \`${existingItem.id}\`).`,
@@ -616,7 +615,7 @@ async function handleUpdateItemSelect(interaction: any) {
 
   try {
     const existingItemResponse = await axios.get(
-      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+      `http://localhost:8080/api/monitored-items/${itemId}`
     )
     const existingItem = existingItemResponse.data
 
@@ -683,7 +682,7 @@ async function handleUpdateFreeFormFields(interaction: any) {
 
   try {
     const existingItemResponse = await axios.get(
-      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`
+      `http://localhost:8080/api/monitored-items/${itemId}`
     )
     const existingItem = existingItemResponse.data
 
@@ -972,16 +971,16 @@ async function handleFreeFormModalSubmit(interaction: any) {
       let urlRecord = null
       try {
         const urlRecordResponse = await axios.get(
-          `http://localhost:${
-            config.API_PORT
-          }/api/urls/by-string?url=${encodeURIComponent(newUrl)}`
+          `https://tcg-player-bot-357901268879.us-south1.run.app/api/urls/by-string?url=${encodeURIComponent(
+            newUrl
+          )}`
         )
         urlRecord = urlRecordResponse.data
       } catch (error: any) {
         if (error.response && error.response.status === 404) {
           // URL not found, create it
           const newUrlResponse = await axios.post(
-            `http://localhost:${config.API_PORT}/api/urls`,
+            `https://tcg-player-bot-357901268879.us-south1.run.app/api/urls`,
             { url: newUrl }
           )
           urlRecord = newUrlResponse.data
@@ -1018,7 +1017,7 @@ async function handleFreeFormModalSubmit(interaction: any) {
     }
 
     const updatedItemResponse = await axios.put(
-      `http://localhost:${config.API_PORT}/api/monitored-items/${itemId}`,
+      `https://tcg-player-bot-357901268879.us-south1.run.app/api/monitored-items/${itemId}`,
       updateData
     )
     const updatedItem = updatedItemResponse.data
