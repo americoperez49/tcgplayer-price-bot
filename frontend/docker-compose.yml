@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  frontend:
+    container_name: tcgplayer-price-bot-frontend
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4200:80" # Map frontend application port

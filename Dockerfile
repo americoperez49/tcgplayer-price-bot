@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     xvfb \
     chromium \
+    dbus-x11 \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
