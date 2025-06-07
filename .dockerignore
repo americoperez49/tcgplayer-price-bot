@@ -1,0 +1,9 @@
+node_modules
+frontend/
+supabase/
+.git
+.vscode
+dist
+npm-debug.log
+Dockerfile
+.dockerignore

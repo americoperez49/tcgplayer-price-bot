@@ -127,7 +127,11 @@ const prisma = new PrismaClient()
       monitoredItemName: updatedUrl.monitoredItems[0]?.name || null,
       latestPrice: updatedUrl.priceHistory[0]?.price || null,
       discordUserNames: Array.from(
-        new Set(updatedUrl.monitoredItems.map((item) => item.discordUserName))
+        new Set(
+          updatedUrl.monitoredItems.map(
+            (item: { discordUserName: string | null }) => item.discordUserName
+          )
+        )
       ).filter((name) => name !== null) as string[],
     }
 

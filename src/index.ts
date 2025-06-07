@@ -110,7 +110,7 @@ async function fetchItemDetails(
     browser = await puppeteer.launch({
       headless: false,
       devtools: false,
-      args: ["--window-position=0,1920"],
+      args: ["--window-position=0,1920", "--no-sandbox"],
     }) // Launch with devtools enabled
     const page = await browser.newPage()
 
@@ -135,7 +135,7 @@ async function fetchItemDetails(
       })
     }
 
-    await page.goto(url) // Use the passed URL
+    await page.goto(url, { timeout: 60000 }) // Use the passed URL, increased timeout to 60 seconds
     await new Promise((resolve) => setTimeout(resolve, 10000)) // Increased wait time for debugging
 
     // Wait for the price, condition, and image elements to be available

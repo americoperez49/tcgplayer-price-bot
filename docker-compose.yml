@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  app:
+    container_name: tcgplayer-price-bot-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3001" # Map application port
+    environment:
+      # These variables are used by your application
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      CHANNEL_ID: ${CHANNEL_ID}
+      CLIENT_ID: ${CLIENT_ID}
+      POLLING_INTERVAL_MS: ${POLLING_INTERVAL_MS}
+      API_PORT: 3001 # Fixed port for internal container communication
+      # Database URL for Prisma (connects to Supabase's database)
+      DATABASE_URL: ${DATABASE_URL}
