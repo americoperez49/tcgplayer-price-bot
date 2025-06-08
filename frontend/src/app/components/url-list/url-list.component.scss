@@ -107,6 +107,12 @@
           animation: pulse 1s infinite alternate; /* Simple pulse animation */
         }
       }
+
+      .last-updated {
+        font-size: 0.85em;
+        color: #888;
+        margin-top: 5px;
+      }
     }
   }
 

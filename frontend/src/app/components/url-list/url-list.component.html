@@ -32,6 +32,9 @@
         <p *ngIf="urlItem.latestPrice === null" class="latest-price no-price">
           Latest Price: N/A
         </p>
+        <p *ngIf="urlItem.lastUpdated" class="last-updated">
+          Last Updated: {{ urlItem.lastUpdated | date : "short" }}
+        </p>
         <div *ngIf="urlItem.hasPriceChanged" class="price-change-indicator">
           <span>New Price!</span>
         </div>
