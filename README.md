@@ -210,6 +210,73 @@ erDiagram
 - `/update-item`: Select an item to update its name, URL, or threshold.
 - `/delete-item`: Select an item to delete.
 
+## Building and Deploying with Docker
+
+This project can be containerized using Docker for easier deployment.
+
+### 1. Build the Docker Image
+
+Ensure you are in the root directory of the project (`tcgplayer-price-bot`) where the `Dockerfile` is located.
+
+```bash
+docker build -t tcgplayer-price-bot .
+```
+
+This command builds a Docker image named `tcgplayer-price-bot` using the `Dockerfile` in the current directory.
+
+### 2. Run the Docker Container
+
+You can run the bot in a Docker container. Make sure your `.env` file is correctly configured as described in the "Environment Variables" section, especially the `DATABASE_URL` to point to your PostgreSQL instance (which can be another Docker container or a remote database).
+
+If you are running Supabase locally with Docker Compose, ensure those services are up and running first.
+
+```bash
+docker run -d --name tcgplayer-bot --env-file ./.env tcgplayer-price-bot
+```
+
+- `-d`: Runs the container in detached mode (in the background).
+- `--name tcgplayer-bot`: Assigns a name to your container for easy reference.
+- `--env-file ./.env`: Mounts your local `.env` file into the container, making environment variables available to the application inside.
+- `tcgplayer-price-bot`: The name of the Docker image to run.
+
+### 3. Verify Container Status
+
+Check if your container is running:
+
+```bash
+docker ps
+```
+
+You should see `tcgplayer-bot` listed.
+
+### 4. View Container Logs (for troubleshooting)
+
+To view the bot's output and check for errors:
+
+```bash
+docker logs tcgplayer-bot
+```
+
+To follow logs in real-time:
+
+```bash
+docker logs -f tcgplayer-bot
+```
+
+### 5. Stop and Remove the Container
+
+To stop the running bot container:
+
+```bash
+docker stop tcgplayer-bot
+```
+
+To remove the container (after stopping it):
+
+```bash
+docker rm tcgplayer-bot
+```
+
 ## Troubleshooting
 
 - If the bot doesn't come online, check your `DISCORD_TOKEN` and `CHANNEL_ID` in the `.env` file.
