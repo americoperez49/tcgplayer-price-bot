@@ -28,14 +28,19 @@ import { Server } from "socket.io" // Import Server from socket.io
 import priceHistoryRouter from "./api/price-history" // Import the price history router
 import monitoredItemsRouter from "./api/monitored-items" // Import the monitored items router
 
+// Helper function to round numbers to two decimal places
+function roundToTwoDecimalPlaces(num: number): number {
+  return parseFloat(num.toFixed(2))
+}
+
 // Initialize Express app
 const app = express()
 app.use(
   cors({
-    origin: "http://localhost:4200", // Allow requests from your Angular frontend
+    origin: ["https://tcg-player-bot-frontend.web.app"], // Allow requests from your Angular frontend and deployed app
     credentials: true, // Allow cookies to be sent
   })
-) // Enable CORS for specific origin
+) // Enable CORS for multiple origins
 app.use(express.json()) // Enable JSON body parsing
 
 // Mount API routers
@@ -185,7 +190,9 @@ async function fetchItemDetails(
         if (priceText) {
           const match = priceText.match(/\$([0-9,]+\.?[0-9]*)/)
           if (match && match[1]) {
-            basePrice = parseFloat(match[1].replace(/,/g, ""))
+            basePrice = roundToTwoDecimalPlaces(
+              parseFloat(match[1].replace(/,/g, ""))
+            )
           }
         }
 
@@ -245,7 +252,9 @@ async function fetchItemDetails(
             const shippingMatch =
               shippingPriceElement.textContent?.match(/\$([0-9]+\.?[0-9]*)/)
             if (shippingMatch && shippingMatch[1]) {
-              spotlightShippingCost = parseFloat(shippingMatch[1])
+              spotlightShippingCost = roundToTwoDecimalPlaces(
+                parseFloat(shippingMatch[1])
+              )
             }
           }
         }
@@ -258,7 +267,9 @@ async function fetchItemDetails(
       if (spotlightDetails.basePrice !== null) {
         allPrices.push({
           basePrice: spotlightDetails.basePrice,
-          totalPrice: spotlightDetails.basePrice + spotlightShippingCost, // Calculate total price
+          totalPrice: roundToTwoDecimalPlaces(
+            spotlightDetails.basePrice + spotlightShippingCost
+          ), // Calculate total price and round
           condition: spotlightDetails.condition,
           shippingCost: spotlightShippingCost, // Store the actual shipping cost
         })
@@ -305,7 +316,9 @@ async function fetchItemDetails(
             const shippingMatch =
               shippingPriceElement.textContent?.match(/\$([0-9]+\.?[0-9]*)/)
             if (shippingMatch && shippingMatch[1]) {
-              currentItemShippingCost = parseFloat(shippingMatch[1])
+              currentItemShippingCost = roundToTwoDecimalPlaces(
+                parseFloat(shippingMatch[1])
+              )
             }
           }
         }
@@ -317,7 +330,9 @@ async function fetchItemDetails(
         if (listItemDetails.basePrice !== null) {
           allPrices.push({
             basePrice: listItemDetails.basePrice,
-            totalPrice: listItemDetails.basePrice + currentItemShippingCost, // This is the total price
+            totalPrice: roundToTwoDecimalPlaces(
+              listItemDetails.basePrice + currentItemShippingCost
+            ), // This is the total price, rounded
             condition: listItemDetails.condition,
             shippingCost: currentItemShippingCost, // Store the shipping cost for this specific item
           })
@@ -341,9 +356,13 @@ async function fetchItemDetails(
           (a, b) => (a.totalPrice || Infinity) - (b.totalPrice || Infinity)
         )
         lowestBasePrice = filteredPrices[0].basePrice
-        lowestTotalPrice = filteredPrices[0].totalPrice
+        lowestTotalPrice = roundToTwoDecimalPlaces(
+          filteredPrices[0].totalPrice || 0
+        )
         correspondingCondition = filteredPrices[0].condition
-        correspondingShippingCost = filteredPrices[0].shippingCost // Get shipping cost
+        correspondingShippingCost = roundToTwoDecimalPlaces(
+          filteredPrices[0].shippingCost || 0
+        ) // Get shipping cost
       } else if (allPrices.length > 0) {
         // Fallback: if no matching condition found, use the overall lowest price
         // This might not be desired, but ensures a price is returned if possible.
@@ -352,9 +371,11 @@ async function fetchItemDetails(
           (a, b) => (a.totalPrice || Infinity) - (b.totalPrice || Infinity)
         )
         lowestBasePrice = allPrices[0].basePrice
-        lowestTotalPrice = allPrices[0].totalPrice
+        lowestTotalPrice = roundToTwoDecimalPlaces(allPrices[0].totalPrice || 0)
         correspondingCondition = allPrices[0].condition
-        correspondingShippingCost = allPrices[0].shippingCost // Get shipping cost
+        correspondingShippingCost = roundToTwoDecimalPlaces(
+          allPrices[0].shippingCost || 0
+        ) // Get shipping cost
       }
 
       return {
@@ -369,9 +390,9 @@ async function fetchItemDetails(
     console.log(
       "\n" +
         `--- Item Details ---\n` +
-        `Base Price:    $${details.basePrice}\n` + // New: Display base price
-        `Shipping:      $${details.shippingCost}\n` +
-        `Total Price:   $${details.totalPrice}\n` + // New: Display total price
+        `Base Price:    $${details.basePrice?.toFixed(2)}\n` + // New: Display base price, formatted
+        `Shipping:      $${details.shippingCost?.toFixed(2)}\n` +
+        `Total Price:   $${details.totalPrice?.toFixed(2)}\n` + // New: Display total price, formatted
         `Condition:     ${details.condition}\n` +
         `--------------------` // Add a separator line
     )
@@ -440,7 +461,13 @@ async function checkPriceAndNotify() {
     const scrapedCondition = itemDetails.condition
     const scrapedImageUrl = itemDetails.imageUrl // Get the scraped image URL
 
-    if (currentTotalPrice === null) {
+    // Ensure currentTotalPrice is rounded for consistent comparisons and storage
+    const roundedCurrentTotalPrice =
+      currentTotalPrice !== null
+        ? roundToTwoDecimalPlaces(currentTotalPrice)
+        : null
+
+    if (roundedCurrentTotalPrice === null) {
       console.log(
         `[${timestamp}] Failed to get current total price for ${item.name}. Skipping notification.`
       )
@@ -479,19 +506,26 @@ async function checkPriceAndNotify() {
     }
 
     console.log(
-      `[${timestamp}] Current Total Price for ${item.name}: $${currentTotalPrice}`
+      `[${timestamp}] Current Total Price for ${
+        item.name
+      }: $${roundedCurrentTotalPrice?.toFixed(2)}`
     )
     if (lastRecordedPrice !== null) {
       console.log(
-        `[${timestamp}] Last recorded price for ${item.name}: $${lastRecordedPrice}`
+        `[${timestamp}] Last recorded price for ${
+          item.name
+        }: $${lastRecordedPrice.toFixed(2)}`
       )
     }
 
     // Add entry to PriceHistory only if price has changed or it's the first entry via API
-    if (lastRecordedPrice === null || currentTotalPrice !== lastRecordedPrice) {
+    if (
+      lastRecordedPrice === null ||
+      roundedCurrentTotalPrice !== roundToTwoDecimalPlaces(lastRecordedPrice)
+    ) {
       await axios.post(`http://localhost:8080/api/price-history`, {
         urlId: item.urlId,
-        price: currentTotalPrice, // Store total price in history
+        price: roundedCurrentTotalPrice, // Store total price in history
       })
       console.log(
         `[${timestamp}] Price change detected for ${item.name}. New price history entry added.`
@@ -500,11 +534,18 @@ async function checkPriceAndNotify() {
 
     // Only alert if currentTotalPrice is below the item's threshold AND condition matches
     if (
-      currentTotalPrice < item.threshold &&
+      roundedCurrentTotalPrice !== null && // Ensure it's not null before comparison
+      roundedCurrentTotalPrice < roundToTwoDecimalPlaces(item.threshold) && // Round threshold for comparison
       scrapedCondition === effectiveCondition
     ) {
       console.log(
-        `[${timestamp}] Total Price $${currentTotalPrice} for ${item.name} (Condition: ${scrapedCondition}) is below threshold $${item.threshold} and condition matches. Sending alert.`
+        `[${timestamp}] Total Price $${roundedCurrentTotalPrice.toFixed(
+          2
+        )} for ${
+          item.name
+        } (Condition: ${scrapedCondition}) is below threshold $${item.threshold.toFixed(
+          2
+        )} and condition matches. Sending alert.`
       )
       const channel = (await client.channels.fetch(
         config.CHANNEL_ID
@@ -526,9 +567,9 @@ async function checkPriceAndNotify() {
         await channel.send(
           `${mentions} 🚨 PRICE ALERT! 🚨\n` + // Add mentions here
             `Item: ${item.name} (Condition: ${scrapedCondition})\n` + // Include scraped condition
-            `Base Price: $${itemDetails.basePrice}\n` + // Display base price
-            `Total Price: $${itemDetails.totalPrice}!\n` + // Display total price
-            `Threshold: $${item.threshold}\n` +
+            `Base Price: $${itemDetails.basePrice?.toFixed(2)}\n` + // Display base price, formatted
+            `Total Price: $${itemDetails.totalPrice?.toFixed(2)}!\n` + // Display total price, formatted
+            `Threshold: $${item.threshold.toFixed(2)}\n` +
             `Link: ${item.url.url}`
         ) // Access url from the relation
       } else {
@@ -536,7 +577,13 @@ async function checkPriceAndNotify() {
       }
     } else {
       console.log(
-        `[${timestamp}] Total Price $${currentTotalPrice} for ${item.name} (Condition: ${scrapedCondition}) is above or equal to threshold $${item.threshold} or condition does not match. No alert needed.`
+        `[${timestamp}] Total Price $${roundedCurrentTotalPrice?.toFixed(
+          2
+        )} for ${
+          item.name
+        } (Condition: ${scrapedCondition}) is above or equal to threshold $${item.threshold.toFixed(
+          2
+        )} or condition does not match. No alert needed.`
       )
     }
     await new Promise((resolve) => setTimeout(resolve, 5000)) // Wait for 5 seconds between items
@@ -995,7 +1042,9 @@ async function handleFreeFormModalSubmit(interaction: any) {
     const newThresholdString =
       interaction.fields.getTextInputValue("thresholdInput")
     if (newThresholdString !== undefined && newThresholdString !== "") {
-      const newThreshold = parseFloat(newThresholdString)
+      const newThreshold = roundToTwoDecimalPlaces(
+        parseFloat(newThresholdString)
+      )
       if (!isNaN(newThreshold) && newThreshold !== existingItem.threshold) {
         updateData.threshold = newThreshold
         changesMade = true
