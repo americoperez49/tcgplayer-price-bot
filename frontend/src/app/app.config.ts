@@ -13,6 +13,8 @@ import {
 } from 'ngx-socket-io'; // Import provideSocketIo and SocketIoConfig
 
 import { routes } from './app.routes';
+import { initializeApp, provideFirebaseApp } from '@angular/fire/app';
+import { getAuth, provideAuth } from '@angular/fire/auth';
 
 const config: SocketIoConfig = {
   url: 'https://tcg-player-bot-357901268879.us-south1.run.app',
@@ -31,6 +33,6 @@ export const appConfig: ApplicationConfig = {
         const config = inject(SOCKET_CONFIG_TOKEN);
         return new Socket(config);
       },
-    },
+    }, provideFirebaseApp(() => initializeApp({ projectId: "tcg-player-bot-frontend", appId: "1:889502962248:web:7f333755091ac942a83e7d", storageBucket: "tcg-player-bot-frontend.firebasestorage.app", apiKey: "AIzaSyC_FNP2CAgB8hdslFKYzda25NTeCM4WQIw", authDomain: "tcg-player-bot-frontend.firebaseapp.com", messagingSenderId: "889502962248" })), provideAuth(() => getAuth()),
   ],
 };
