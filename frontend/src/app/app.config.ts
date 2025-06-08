@@ -33,6 +33,17 @@ export const appConfig: ApplicationConfig = {
         const config = inject(SOCKET_CONFIG_TOKEN);
         return new Socket(config);
       },
-    }, provideFirebaseApp(() => initializeApp({ projectId: "tcg-player-bot-frontend", appId: "1:889502962248:web:7f333755091ac942a83e7d", storageBucket: "tcg-player-bot-frontend.firebasestorage.app", apiKey: "AIzaSyC_FNP2CAgB8hdslFKYzda25NTeCM4WQIw", authDomain: "tcg-player-bot-frontend.firebaseapp.com", messagingSenderId: "889502962248" })), provideAuth(() => getAuth()),
+    },
+    provideFirebaseApp(() =>
+      initializeApp({
+        projectId: 'tcg-player-bot-frontend',
+        appId: '1:889502962248:web:7f333755091ac942a83e7d',
+        storageBucket: 'tcg-player-bot-frontend.firebasestorage.app',
+        apiKey: 'AIzaSyC_FNP2CAgB8hdslFKYzda25NTeCM4WQIw',
+        authDomain: 'tcg-player-bot-frontend.firebaseapp.com',
+        messagingSenderId: '889502962248',
+      })
+    ),
+    provideAuth(() => getAuth()),
   ],
 };

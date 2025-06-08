@@ -277,6 +277,12 @@ To remove the container (after stopping it):
 docker rm tcgplayer-bot
 ```
 
+To remove the container (after stopping it):
+
+```bash
+docker rm tcgplayer-bot
+```
+
 ## Troubleshooting
 
 - If the bot doesn't come online, check your `DISCORD_TOKEN` and `CHANNEL_ID` in the `.env` file.

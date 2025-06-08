@@ -62,25 +62,26 @@ const prisma = new PrismaClient()
       },
     })
 
-    // Map the results to include the latest price, item name, and hasPriceChanged directly
+    // Map the results to include the latest price, its timestamp, item name, and hasPriceChanged directly
     const formattedUrls = urls.map(
       (url: {
         id: string
         url: string
         imageUrl: string | null
-        hasPriceChanged: boolean // Include hasPriceChanged in type
+        hasPriceChanged: boolean
         monitoredItems: {
           name: string | null
           discordUserName: string | null
         }[]
-        priceHistory: { price: number | null }[]
+        priceHistory: { price: number | null; timestamp: Date | null }[] // Include timestamp in type
       }) => ({
         id: url.id,
         url: url.url,
         imageUrl: url.imageUrl,
-        hasPriceChanged: url.hasPriceChanged, // Include hasPriceChanged
-        monitoredItemName: url.monitoredItems[0]?.name || null, // Get name from first monitored item
-        latestPrice: url.priceHistory[0]?.price || null, // Get latest price
+        hasPriceChanged: url.hasPriceChanged,
+        monitoredItemName: url.monitoredItems[0]?.name || null,
+        latestPrice: url.priceHistory[0]?.price || null,
+        lastUpdated: url.priceHistory[0]?.timestamp || null, // Include lastUpdated timestamp
         discordUserNames: Array.from(
           new Set(url.monitoredItems.map((item) => item.discordUserName))
         ).filter((name) => name !== null) as string[],

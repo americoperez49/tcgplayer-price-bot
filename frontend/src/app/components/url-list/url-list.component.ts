@@ -36,9 +36,15 @@ export class UrlListComponent implements OnInit, OnDestroy {
         // Find the updated URL in the local array and update its properties
         const index = this.urls.findIndex((u) => u.id === updatedUrl.id);
         if (index !== -1) {
+          // Update existing URL properties
           this.urls[index].latestPrice = updatedUrl.latestPrice;
           this.urls[index].hasPriceChanged = updatedUrl.hasPriceChanged;
+          this.urls[index].lastUpdated = updatedUrl.lastUpdated; // Update lastUpdated
+        } else {
+          // If for some reason the URL is not found (e.g., new item added), add it
+          this.urls.push(updatedUrl);
         }
+        this.sortUrls(); // Re-sort the array after update
       });
   }
 
@@ -52,19 +58,27 @@ export class UrlListComponent implements OnInit, OnDestroy {
   fetchUrls(): void {
     this.priceHistoryService.getAllUrls().subscribe({
       next: (data: MonitoredUrl[]) => {
-        // Explicitly type data
         this.urls = data;
+        this.sortUrls(); // Sort URLs on initial fetch
         if (this.urls.length === 0) {
           this.errorMessage =
             'No URLs found to monitor. Please add items to the bot.';
         }
       },
       error: (err: any) => {
-        // Explicitly type err
         console.error('Error fetching URLs:', err);
         this.errorMessage =
           'Failed to fetch URLs. Please ensure the backend API is running.';
       },
+    });
+  }
+
+  private sortUrls(): void {
+    this.urls.sort((a, b) => {
+      // Handle null or undefined lastUpdated values
+      const dateA = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+      const dateB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+      return dateB - dateA; // Sort in descending order (latest first)
     });
   }
 

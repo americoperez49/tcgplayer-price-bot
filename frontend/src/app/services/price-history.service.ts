@@ -14,9 +14,10 @@ export interface MonitoredUrl {
   id: string;
   url: string;
   imageUrl: string | null;
-  hasPriceChanged: boolean; // New field
+  hasPriceChanged: boolean;
   monitoredItemName: string | null;
   latestPrice: number | null;
+  lastUpdated: Date | null; // New field for last updated timestamp
   discordUserNames: string[];
 }
 

@@ -37,7 +37,10 @@ function roundToTwoDecimalPlaces(num: number): number {
 const app = express()
 app.use(
   cors({
-    origin: ["https://tcg-player-bot-frontend.web.app"], // Allow requests from your Angular frontend and deployed app
+    origin: [
+      "https://tcg-player-bot-frontend.web.app",
+      "http://localhost:4200",
+    ], // Allow requests from your Angular frontend and deployed app
     credentials: true, // Allow cookies to be sent
   })
 ) // Enable CORS for multiple origins

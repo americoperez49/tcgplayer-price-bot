@@ -126,6 +126,7 @@ const prisma = new PrismaClient()
       hasPriceChanged: updatedUrl.hasPriceChanged,
       monitoredItemName: updatedUrl.monitoredItems[0]?.name || null,
       latestPrice: updatedUrl.priceHistory[0]?.price || null,
+      lastUpdated: updatedUrl.priceHistory[0]?.timestamp || null, // Include the timestamp of the latest price
       discordUserNames: Array.from(
         new Set(
           updatedUrl.monitoredItems.map(
