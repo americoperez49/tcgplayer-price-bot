@@ -18,6 +18,7 @@ import { Subscription } from 'rxjs'; // Import Subscription
 export class UrlListComponent implements OnInit, OnDestroy {
   urls: MonitoredUrl[] = [];
   errorMessage: string | null = null;
+  isLoading: boolean = true; // Add loading indicator
   private priceUpdateSubscription!: Subscription; // Subscription for real-time updates
 
   constructor(
@@ -56,6 +57,7 @@ export class UrlListComponent implements OnInit, OnDestroy {
   }
 
   fetchUrls(): void {
+    this.isLoading = true; // Set loading to true when fetching starts
     this.priceHistoryService.getAllUrls().subscribe({
       next: (data: MonitoredUrl[]) => {
         this.urls = data;
@@ -64,11 +66,13 @@ export class UrlListComponent implements OnInit, OnDestroy {
           this.errorMessage =
             'No URLs found to monitor. Please add items to the bot.';
         }
+        this.isLoading = false; // Set loading to false on success
       },
       error: (err: any) => {
         console.error('Error fetching URLs:', err);
         this.errorMessage =
           'Failed to fetch URLs. Please ensure the backend API is running.';
+        this.isLoading = false; // Set loading to false on error
       },
     });
   }

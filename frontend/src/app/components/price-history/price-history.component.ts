@@ -49,6 +49,7 @@ export class PriceHistoryComponent implements OnInit {
   discordUserNames: string[] = []; // To store the list of Discord usernames
   errorMessage: string | null = null;
   private currentUrlId: string | null = null; // To store the ID of the current URL
+  isLoading: boolean = true; // Add loading indicator
 
   constructor(
     private priceHistoryService: PriceHistoryService,
@@ -171,6 +172,7 @@ export class PriceHistoryComponent implements OnInit {
 
   fetchPriceHistory(): void {
     this.errorMessage = null; // Clear previous errors
+    this.isLoading = true; // Set loading to true when fetching starts
     this.priceHistoryService.getPriceHistory(this.url).subscribe({
       next: (data: PriceHistoryEntry[]) => {
         // Explicitly type data
@@ -179,6 +181,7 @@ export class PriceHistoryComponent implements OnInit {
           this.errorMessage = 'No price history found for this URL.';
         }
         this.updateChart();
+        this.isLoading = false; // Set loading to false on success
       },
       error: (err: any) => {
         // Explicitly type err
@@ -188,6 +191,7 @@ export class PriceHistoryComponent implements OnInit {
           'Failed to fetch price history. Please check the URL and try again.';
         this.priceHistory = [];
         this.updateChart(); // Clear chart on error
+        this.isLoading = false; // Set loading to false on error
       },
     });
   }

@@ -15,7 +15,12 @@
     {{ errorMessage }}
   </div>
 
-  <div *ngIf="priceHistory.length > 0" class="chart-section">
+  <div *ngIf="isLoading" class="loading-indicator">
+    <div class="spinner"></div>
+    <p>Loading price history...</p>
+  </div>
+
+  <div *ngIf="!isLoading && priceHistory.length > 0" class="chart-section">
     <div class="chart-wrapper">
       <apx-chart
         [series]="chartOptions.series!"
@@ -31,7 +36,7 @@
   </div>
 
   <div
-    *ngIf="priceHistory.length === 0 && !errorMessage"
+    *ngIf="!isLoading && priceHistory.length === 0 && !errorMessage"
     class="no-data-message"
   >
     <p>No price history found for this URL.</p>

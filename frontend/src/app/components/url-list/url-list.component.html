@@ -5,7 +5,12 @@
     {{ errorMessage }}
   </div>
 
-  <div *ngIf="urls.length > 0" class="url-cards-container">
+  <div *ngIf="isLoading" class="loading-indicator">
+    <div class="spinner"></div>
+    <p>Loading URLs...</p>
+  </div>
+
+  <div *ngIf="!isLoading && urls.length > 0" class="url-cards-container">
     <div
       *ngFor="let urlItem of urls"
       class="url-card"
@@ -34,7 +39,10 @@
     </div>
   </div>
 
-  <div *ngIf="urls.length === 0 && !errorMessage" class="no-urls-message">
+  <div
+    *ngIf="!isLoading && urls.length === 0 && !errorMessage"
+    class="no-urls-message"
+  >
     <p>
       No URLs are currently being monitored. Add items using the Discord bot to
       see them here.
