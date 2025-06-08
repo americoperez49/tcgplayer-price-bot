@@ -190,8 +190,8 @@ async function fetchItemDetails(
         if (priceText) {
           const match = priceText.match(/\$([0-9,]+\.?[0-9]*)/)
           if (match && match[1]) {
-            basePrice = roundToTwoDecimalPlaces(
-              parseFloat(match[1].replace(/,/g, ""))
+            basePrice = parseFloat(
+              parseFloat(match[1].replace(/,/g, "")).toFixed(2)
             )
           }
         }
@@ -252,8 +252,8 @@ async function fetchItemDetails(
             const shippingMatch =
               shippingPriceElement.textContent?.match(/\$([0-9]+\.?[0-9]*)/)
             if (shippingMatch && shippingMatch[1]) {
-              spotlightShippingCost = roundToTwoDecimalPlaces(
-                parseFloat(shippingMatch[1])
+              spotlightShippingCost = parseFloat(
+                parseFloat(shippingMatch[1]).toFixed(2)
               )
             }
           }
@@ -267,8 +267,8 @@ async function fetchItemDetails(
       if (spotlightDetails.basePrice !== null) {
         allPrices.push({
           basePrice: spotlightDetails.basePrice,
-          totalPrice: roundToTwoDecimalPlaces(
-            spotlightDetails.basePrice + spotlightShippingCost
+          totalPrice: parseFloat(
+            (spotlightDetails.basePrice + spotlightShippingCost).toFixed(2)
           ), // Calculate total price and round
           condition: spotlightDetails.condition,
           shippingCost: spotlightShippingCost, // Store the actual shipping cost
@@ -316,8 +316,8 @@ async function fetchItemDetails(
             const shippingMatch =
               shippingPriceElement.textContent?.match(/\$([0-9]+\.?[0-9]*)/)
             if (shippingMatch && shippingMatch[1]) {
-              currentItemShippingCost = roundToTwoDecimalPlaces(
-                parseFloat(shippingMatch[1])
+              currentItemShippingCost = parseFloat(
+                parseFloat(shippingMatch[1]).toFixed(2)
               )
             }
           }
@@ -330,8 +330,8 @@ async function fetchItemDetails(
         if (listItemDetails.basePrice !== null) {
           allPrices.push({
             basePrice: listItemDetails.basePrice,
-            totalPrice: roundToTwoDecimalPlaces(
-              listItemDetails.basePrice + currentItemShippingCost
+            totalPrice: parseFloat(
+              (listItemDetails.basePrice + currentItemShippingCost).toFixed(2)
             ), // This is the total price, rounded
             condition: listItemDetails.condition,
             shippingCost: currentItemShippingCost, // Store the shipping cost for this specific item
@@ -356,12 +356,12 @@ async function fetchItemDetails(
           (a, b) => (a.totalPrice || Infinity) - (b.totalPrice || Infinity)
         )
         lowestBasePrice = filteredPrices[0].basePrice
-        lowestTotalPrice = roundToTwoDecimalPlaces(
-          filteredPrices[0].totalPrice || 0
+        lowestTotalPrice = parseFloat(
+          (filteredPrices[0].totalPrice || 0).toFixed(2)
         )
         correspondingCondition = filteredPrices[0].condition
-        correspondingShippingCost = roundToTwoDecimalPlaces(
-          filteredPrices[0].shippingCost || 0
+        correspondingShippingCost = parseFloat(
+          (filteredPrices[0].shippingCost || 0).toFixed(2)
         ) // Get shipping cost
       } else if (allPrices.length > 0) {
         // Fallback: if no matching condition found, use the overall lowest price
@@ -371,10 +371,10 @@ async function fetchItemDetails(
           (a, b) => (a.totalPrice || Infinity) - (b.totalPrice || Infinity)
         )
         lowestBasePrice = allPrices[0].basePrice
-        lowestTotalPrice = roundToTwoDecimalPlaces(allPrices[0].totalPrice || 0)
+        lowestTotalPrice = parseFloat((allPrices[0].totalPrice || 0).toFixed(2))
         correspondingCondition = allPrices[0].condition
-        correspondingShippingCost = roundToTwoDecimalPlaces(
-          allPrices[0].shippingCost || 0
+        correspondingShippingCost = parseFloat(
+          (allPrices[0].shippingCost || 0).toFixed(2)
         ) // Get shipping cost
       }
 
@@ -385,7 +385,7 @@ async function fetchItemDetails(
         imageUrl: imageUrl,
         shippingCost: correspondingShippingCost, // Return the corresponding shippingCost
       }
-    }, targetCondition) // Pass targetCondition from Node.js context
+    }, targetCondition) // Pass targetCondition
 
     console.log(
       "\n" +
