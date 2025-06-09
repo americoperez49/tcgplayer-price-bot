@@ -5,6 +5,7 @@ import {
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
+import { provideAnimations } from '@angular/platform-browser/animations'; // Import provideAnimations
 import {
   provideSocketIo,
   Socket,
@@ -26,6 +27,7 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(),
+    provideAnimations(), // Add provideAnimations here
     provideSocketIo(config), // Use provideSocketIo for Socket.IO
     {
       provide: Socket,

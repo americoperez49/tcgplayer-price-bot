@@ -22,16 +22,25 @@
 
   <div *ngIf="!isLoading && priceHistory.length > 0" class="chart-section">
     <div class="chart-wrapper">
-      <apx-chart
-        [series]="chartOptions.series!"
-        [chart]="chartOptions.chart!"
-        [xaxis]="chartOptions.xaxis!"
-        [dataLabels]="chartOptions.dataLabels!"
-        [stroke]="chartOptions.stroke!"
-        [tooltip]="chartOptions.tooltip!"
-        [title]="chartOptions.title!"
-        [yaxis]="chartOptions.yaxis!"
-      ></apx-chart>
+      <ngx-charts-line-chart
+        [view]="view"
+        [scheme]="colorScheme"
+        [results]="multi"
+        [gradient]="gradient"
+        [xAxis]="showXAxis"
+        [yAxis]="showYAxis"
+        [legend]="showLegend"
+        [showXAxisLabel]="showXAxisLabel"
+        [showYAxisLabel]="showYAxisLabel"
+        [xAxisLabel]="xAxisLabel"
+        [yAxisLabel]="yAxisLabel"
+        [timeline]="timeline"
+        [autoScale]="autoScale"
+        [roundDomains]="roundDomains"
+        [tooltipDisabled]="tooltipDisabled"
+        [curve]="curve"
+      >
+      </ngx-charts-line-chart>
     </div>
   </div>
 
