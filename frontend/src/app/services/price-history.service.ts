@@ -10,6 +10,11 @@ export interface PriceHistoryEntry {
   timestamp: string; // ISO 8601 string
 }
 
+export interface MonitoredUser {
+  discordUserName: string;
+  threshold: number;
+}
+
 export interface MonitoredUrl {
   id: string;
   url: string;
@@ -18,7 +23,7 @@ export interface MonitoredUrl {
   monitoredItemName: string | null;
   latestPrice: number | null;
   lastUpdated: Date | null; // New field for last updated timestamp
-  discordUserNames: string[];
+  monitoredUsers: MonitoredUser[]; // Keep this for frontend internal use
 }
 
 @Injectable({

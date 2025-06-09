@@ -42,10 +42,13 @@
     <p>No price history found for this URL.</p>
   </div>
 
-  <div *ngIf="discordUserNames.length > 0" class="discord-users-section">
+  <div *ngIf="monitoredUsers.length > 0" class="discord-users-section">
     <h3>Monitored by:</h3>
     <ul>
-      <li *ngFor="let user of discordUserNames">{{ user }}</li>
+      <li *ngFor="let user of monitoredUsers">
+        {{ user.discordUserName }} (Threshold:
+        {{ user.threshold | currency : "USD" : "symbol" : "1.2-2" }})
+      </li>
     </ul>
   </div>
 </div>

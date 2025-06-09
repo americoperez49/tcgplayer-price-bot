@@ -4,7 +4,8 @@ import { ActivatedRoute } from '@angular/router'; // Import ActivatedRoute
 import {
   PriceHistoryService,
   PriceHistoryEntry,
-  MonitoredUrl, // Keep MonitoredUrl for type hinting in fetchMonitoredUrlDetails
+  MonitoredUrl,
+  MonitoredUser, // Import MonitoredUser
 } from '../../services/price-history.service'; // Updated path
 import {
   ChartComponent,
@@ -46,7 +47,7 @@ export class PriceHistoryComponent implements OnInit {
   url: string = ''; // Will be populated from route parameter
   imageUrl: string | null = null; // To store the image URL
   priceHistory: PriceHistoryEntry[] = [];
-  discordUserNames: string[] = []; // To store the list of Discord usernames
+  monitoredUsers: MonitoredUser[] = []; // To store the list of monitored users with thresholds
   errorMessage: string | null = null;
   private currentUrlId: string | null = null; // To store the ID of the current URL
   isLoading: boolean = true; // Add loading indicator
@@ -142,12 +143,15 @@ export class PriceHistoryComponent implements OnInit {
         const monitoredUrl = urls.find((u) => u.url === this.url);
         if (monitoredUrl) {
           this.imageUrl = monitoredUrl.imageUrl;
-          this.discordUserNames = monitoredUrl.discordUserNames;
+          this.monitoredUsers = monitoredUrl.monitoredUsers ?? []; // Directly assign monitoredUsers, default to empty array if null/undefined
           this.currentUrlId = monitoredUrl.id; // Store the URL ID
           // Acknowledge price change when navigating to the item's price history
           if (monitoredUrl.hasPriceChanged && this.currentUrlId) {
             this.acknowledgePriceChange(this.currentUrlId);
           }
+        } else {
+          this.imageUrl = null; // Clear image if URL not found
+          this.monitoredUsers = []; // Clear monitored users if URL not found
         }
       },
       error: (err) => {

@@ -48,7 +48,7 @@ const prisma = new PrismaClient()
             name: true,
             condition: true,
             isFoil: true,
-            threshold: true,
+            threshold: true, // Ensure threshold is selected
             discordUserName: true,
             sellerVerified: true, // Include sellerVerified
           },
@@ -72,6 +72,7 @@ const prisma = new PrismaClient()
         monitoredItems: {
           name: string | null
           discordUserName: string | null
+          threshold: number // Add threshold to type
         }[]
         priceHistory: { price: number | null; timestamp: Date | null }[] // Include timestamp in type
       }) => ({
@@ -82,9 +83,12 @@ const prisma = new PrismaClient()
         monitoredItemName: url.monitoredItems[0]?.name || null,
         latestPrice: url.priceHistory[0]?.price || null,
         lastUpdated: url.priceHistory[0]?.timestamp || null, // Include lastUpdated timestamp
-        discordUserNames: Array.from(
-          new Set(url.monitoredItems.map((item) => item.discordUserName))
-        ).filter((name) => name !== null) as string[],
+        monitoredUsers: url.monitoredItems
+          .filter((item) => item.discordUserName !== null)
+          .map((item) => ({
+            discordUserName: item.discordUserName!, // Use non-null assertion as we filtered nulls
+            threshold: item.threshold,
+          })),
       })
     )
 
