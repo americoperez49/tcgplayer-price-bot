@@ -7,18 +7,43 @@ import {
   MonitoredUrl,
   MonitoredUser, // Import MonitoredUser
 } from '../../services/price-history.service'; // Updated path
+import {
+  ChartComponent,
+  ApexAxisChartSeries,
+  ApexChart,
+  ApexXAxis,
+  ApexDataLabels,
+  ApexTooltip,
+  ApexStroke,
+  ApexTitleSubtitle,
+  ApexYAxis,
+  NgApexchartsModule,
+} from 'ng-apexcharts';
 import { Subscription } from 'rxjs'; // Keep Subscription for ngOnDestroy if needed later, but remove priceUpdateSubscription
-import { NgxChartsModule } from '@swimlane/ngx-charts';
-import { curveStep } from 'd3-shape'; // Import curveStep
+
+export type ChartOptions = {
+  series: ApexAxisChartSeries;
+  chart: ApexChart;
+  xaxis: ApexXAxis;
+  dataLabels: ApexDataLabels;
+  tooltip: ApexTooltip;
+  stroke: ApexStroke;
+  title: ApexTitleSubtitle;
+  yaxis: ApexYAxis;
+};
 
 @Component({
   selector: 'app-components-price-history', // Updated selector
   standalone: true,
-  imports: [CommonModule, NgxChartsModule],
+  imports: [CommonModule, NgApexchartsModule],
   templateUrl: './price-history.component.html',
   styleUrl: './price-history.component.scss',
 })
 export class PriceHistoryComponent implements OnInit {
+  // Removed OnDestroy for now
+  @ViewChild('chart') chart!: ChartComponent;
+  public chartOptions: Partial<ChartOptions>;
+
   url: string = ''; // Will be populated from route parameter
   imageUrl: string | null = null; // To store the image URL
   priceHistory: PriceHistoryEntry[] = [];
@@ -27,34 +52,77 @@ export class PriceHistoryComponent implements OnInit {
   private currentUrlId: string | null = null; // To store the ID of the current URL
   isLoading: boolean = true; // Add loading indicator
 
-  // ngx-charts properties
-  multi: any[] = [];
-  view: [number, number] = [700, 300]; // Chart dimensions
-  showXAxis = true;
-  showYAxis = true;
-  gradient = false;
-  showLegend = true;
-  showXAxisLabel = true;
-  xAxisLabel = 'Date';
-  showYAxisLabel = true;
-  yAxisLabel = 'Price ($)';
-  timeline = true;
-  autoScale = true;
-  roundDomains = true;
-  tooltipDisabled = false;
-  curve: any = curveStep; // Add this line for step interpolation
-
-  colorScheme: any = {
-    domain: ['#5AA454', '#A10A28', '#C7B42C', '#AAAAAA'],
-    name: 'myScheme', // Add a name for the color scheme
-    selectable: true, // Make it selectable
-    group: 'Ordinal', // Or 'Linear' depending on your needs
-  };
-
   constructor(
     private priceHistoryService: PriceHistoryService,
     private route: ActivatedRoute // Inject ActivatedRoute
-  ) {}
+  ) {
+    this.chartOptions = {
+      series: [
+        {
+          name: 'Price',
+          data: [],
+        },
+      ],
+      chart: {
+        height: 350,
+        type: 'line',
+        zoom: {
+          enabled: true,
+        },
+      },
+      dataLabels: {
+        enabled: true,
+      },
+      stroke: {
+        curve: 'stepline',
+      },
+      title: {
+        text: 'Price History',
+        align: 'left',
+      },
+      xaxis: {
+        type: 'datetime',
+        labels: {
+          datetimeFormatter: {
+            year: 'yyyy',
+            month: "MMM 'yy",
+            day: 'dd MMM',
+            hour: 'hh:mm TT', // Change to 12-hour format with AM/PM
+          },
+          datetimeUTC: false, // Display datetime in local timezone
+        },
+        title: {
+          text: 'Date',
+        },
+      },
+      yaxis: {
+        title: {
+          text: 'Price ($)',
+        },
+        labels: {
+          formatter: function (value) {
+            return new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD',
+            }).format(value);
+          },
+        },
+      },
+      tooltip: {
+        x: {
+          format: 'dd MMM yyyy hh:mm TT', // Change to 12-hour format with AM/PM
+        },
+        y: {
+          formatter: function (value) {
+            return new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD',
+            }).format(value);
+          },
+        },
+      },
+    };
+  }
 
   ngOnInit(): void {
     this.route.paramMap.subscribe((params) => {
@@ -134,15 +202,19 @@ export class PriceHistoryComponent implements OnInit {
 
   private updateChart(): void {
     const chartData = this.priceHistory.map((entry) => ({
-      name: new Date(entry.timestamp),
-      value: entry.price,
+      x: new Date(entry.timestamp).getTime(),
+      y: entry.price,
     }));
 
-    this.multi = [
+    this.chartOptions.series = [
       {
         name: 'Price',
-        series: chartData,
+        data: chartData,
       },
     ];
+
+    if (this.chart) {
+      this.chart.updateSeries(this.chartOptions.series);
+    }
   }
 }
